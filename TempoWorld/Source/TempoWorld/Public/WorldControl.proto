@@ -5,8 +5,25 @@ syntax = "proto3";
 import "TempoCore/Empty.proto";
 import "TempoCore/Geometry.proto";
 
+// Naming of actors, components, and classes
+// -----------------------------------------
+// Unreal names the class a Blueprint generates with a "_C" suffix ("BP_Foo_C"), and that suffix
+// leaks into instance names too ("BP_Foo_C_1").
+//
+// CLASS names (`actor_type`, `component_type`, class-valued properties) are reported exactly as
+// Unreal names the class -- "BP_Foo_C" for a Blueprint, "StaticMeshActor" for a native class
+// (minus Unreal's U/A prefix). Reporting the real name keeps a native "Foo" distinguishable from
+// a Blueprint "Foo_C".
+//
+// ACTOR and COMPONENT names never carry the suffix: an actor is "BP_Foo_1", never "BP_Foo_C_1",
+// in every build type. (Unreal's editor labels drop it, so cooked builds are made to match.)
+//
+// Everything is ACCEPTED in either spelling -- "BP_Foo" and "BP_Foo_C" both name the same
+// Blueprint class -- so any name or type this API reports can be fed straight back in. All name
+// matching is case-insensitive.
+
 message SpawnActorRequest {
-  // Class name of the actor to spawn.
+  // Class name of the actor to spawn, e.g. "BP_Foo_C" (or "BP_Foo") or "StaticMeshActor".
   string actor_type = 1;
   // If true, defer finishing the spawn until FinishSpawningActor is called.
   bool deferred = 2;
@@ -39,7 +56,7 @@ message DestroyActorRequest {
 }
 
 message AddComponentRequest {
-  // Class name of the component to add.
+  // Class name of the component to add, e.g. "TempoCamera" or "BP_MyComponent_C".
   string component_type = 1;
   // Name of the owning actor.
   string actor = 2;
@@ -102,9 +119,10 @@ message DeactivateComponentRequest {
 }
 
 message ActorDescriptor {
-  // Actor name.
+  // Actor name, as accepted by every `actor` field in this API.
   string name = 1;
-  // Actor class name.
+  // Actor class name (the UClass name, so "BP_Foo_C" for a Blueprint), as accepted by
+  // SpawnActor's `actor_type`.
   string actor_type = 2;
 }
 
@@ -117,7 +135,7 @@ message ComponentDescriptor {
   string actor = 1;
   // Component name.
   string name = 2;
-  // Component class name.
+  // Component class name (the UClass name), as accepted by AddComponent's `component_type`.
   string component_type = 3;
 }
 
@@ -283,7 +301,8 @@ message SetClassPropertyRequest {
   string actor = 1;
   string component = 2;
   string property = 3;
-  // Class path or name.
+  // Class name, e.g. "BP_Foo_C" (or "BP_Foo") or "StaticMeshActor". GetActorProperties reports a
+  // class-valued property as its UClass name, so that value feeds straight back in here.
   string value = 4;
 }
 
@@ -357,6 +376,7 @@ message SetClassArrayPropertyRequest {
   string actor = 1;
   string component = 2;
   string property = 3;
+  // Class names, spelled as in SetClassProperty's `value`.
   repeated string values = 4;
 }
 
@@ -429,6 +449,7 @@ message SetClassSetPropertyRequest {
   string actor = 1;
   string component = 2;
   string property = 3;
+  // Class names, spelled as in SetClassProperty's `value`.
   repeated string values = 4;
 }
 

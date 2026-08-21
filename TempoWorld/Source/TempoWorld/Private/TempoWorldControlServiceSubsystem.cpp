@@ -960,6 +960,8 @@ void GetObjectProperties(const UObject* Object, GetPropertiesResponse& Response)
 					}
 					else
 					{
+						// For a UClass value this is the class name GetAllActors reports and
+						// SetClassProperty accepts, so the value round trips.
 						*Value = ValueObject->GetName();
 					}
 				}

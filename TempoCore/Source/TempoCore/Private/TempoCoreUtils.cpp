@@ -87,10 +87,73 @@ FBox UTempoCoreUtils::GetActorLocalBounds(const AActor* Actor, bool bIncludeHidd
 
 FString UTempoCoreUtils::GetActorIdentifier(const AActor* Actor)
 {
+	if (!Actor)
+	{
+		return FString();
+	}
+
 #if WITH_EDITOR
 	// Materialize the actor label now so it matches every later GetActorNameOrLabel() call,
 	// including GetActorWithName lookups. See header for details.
 	(void)Actor->GetActorLabel();
 #endif
-	return Actor->GetActorNameOrLabel();
+	const FString NameOrLabel = Actor->GetActorNameOrLabel();
+
+	// Cooked builds have no labels, so the above is the object name, which for a Blueprint actor
+	// embeds the generated class's "_C" ("BP_Foo_C_1"). Editor labels never do (Unreal's own
+	// AActor::GetDefaultActorLabel strips it), so strip it here too and clients see one spelling
+	// in both build types. The suffix is interior rather than trailing, so splice it out by class
+	// name instead of chopping the end.
+	const UClass* Class = Actor->GetClass();
+	const FString ClassName = Class->GetName();
+	const FString StrippedClassName = GetClassNameWithoutBlueprintSuffix(Class);
+	if (StrippedClassName.Len() != ClassName.Len() && NameOrLabel.StartsWith(ClassName, ESearchCase::CaseSensitive))
+	{
+		return StrippedClassName + NameOrLabel.RightChop(ClassName.Len());
+	}
+
+	return NameOrLabel;
+}
+
+bool UTempoCoreUtils::ActorNameMatches(const AActor* Actor, const FString& RequestedName)
+{
+	return Actor
+		&& (GetActorIdentifier(Actor).Equals(RequestedName, ESearchCase::IgnoreCase)
+			|| Actor->GetName().Equals(RequestedName, ESearchCase::IgnoreCase));
+}
+
+FString UTempoCoreUtils::GetClassNameWithoutBlueprintSuffix(const UClass* Class)
+{
+	if (!Class)
+	{
+		return FString();
+	}
+
+	// Only Blueprint-generated classes carry the suffix. CLASS_CompiledFromBlueprint survives
+	// cooking, unlike UClass::ClassGeneratedBy (the UBlueprint asset itself is editor-only).
+	const FString ClassName = Class->GetName();
+	return Class->HasAnyClassFlags(CLASS_CompiledFromBlueprint) ? StripBlueprintClassSuffix(ClassName) : ClassName;
+}
+
+FString UTempoCoreUtils::StripBlueprintClassSuffix(const FString& ClassName)
+{
+	// Case-insensitive so a client's spelling of the suffix does not matter. Unreal always
+	// generates it as "_C", so this can only over-strip a native class name ending in "_c" -- and
+	// GetClassNameWithoutBlueprintSuffix never routes native classes here.
+	FString Stripped = ClassName;
+	Stripped.RemoveFromEnd(TEXT("_C"), ESearchCase::IgnoreCase);
+	return Stripped;
+}
+
+bool UTempoCoreUtils::ClassNameMatches(const UClass* Class, const FString& RequestedName)
+{
+	return Class
+		&& (Class->GetName().Equals(RequestedName, ESearchCase::IgnoreCase)
+			|| GetClassNameWithoutBlueprintSuffix(Class).Equals(RequestedName, ESearchCase::IgnoreCase));
+}
+
+bool UTempoCoreUtils::ClassNameMatches(const FString& ClassName, const FString& RequestedName)
+{
+	return ClassName.Equals(RequestedName, ESearchCase::IgnoreCase)
+		|| StripBlueprintClassSuffix(ClassName).Equals(RequestedName, ESearchCase::IgnoreCase);
 }

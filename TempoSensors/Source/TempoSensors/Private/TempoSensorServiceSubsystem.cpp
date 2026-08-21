@@ -11,6 +11,7 @@
 #include "TempoSensors/Lidar.pb.h"
 
 #include "TempoCoreSettings.h"
+#include "TempoCoreUtils.h"
 #include "TempoSensorsSettings.h"
 
 #include "Components/SceneCaptureComponent.h"
@@ -234,12 +235,14 @@ void UTempoSensorServiceSubsystem::RequestImages(const RequestType& Request, con
 {
 	check(GetWorld());
 
-	TMap<FString, TArray<UTempoCamera*>> OwnersToComponents;
+	// Keyed by the owning actor rather than its name so the requested owner name can be matched
+	// with UTempoCoreUtils::ActorNameMatches, which accepts either spelling of a Blueprint name.
+	TMap<const AActor*, TArray<UTempoCamera*>> OwnersToComponents;
 	for (TObjectIterator<UTempoCamera> ComponentIt; ComponentIt; ++ComponentIt)
 	{
 		if (IsValid(*ComponentIt) && ComponentIt->GetWorld() == GetWorld())
 		{
-			OwnersToComponents.FindOrAdd(ComponentIt->GetOwnerName()).Add(*ComponentIt);
+			OwnersToComponents.FindOrAdd(ComponentIt->GetOwner()).Add(*ComponentIt);
 		}
 	}
 
@@ -285,9 +288,8 @@ void UTempoSensorServiceSubsystem::RequestImages(const RequestType& Request, con
 
 	for (const auto& OwnerComponents : OwnersToComponents)
 	{
-		const FString& OwnerName = OwnerComponents.Key;
 		const TArray<UTempoCamera*>& Components = OwnerComponents.Value;
-		if (OwnerName.Equals(RequestedOwnerName, ESearchCase::IgnoreCase))
+		if (UTempoCoreUtils::ActorNameMatches(OwnerComponents.Key, RequestedOwnerName))
 		{
 			for (UTempoCamera* Component : Components)
 			{
@@ -333,12 +335,14 @@ void UTempoSensorServiceSubsystem::StreamLidarScans(const TempoSensors::LidarSca
 {
 	check(GetWorld());
 
-	TMap<FString, TArray<UTempoLidar*>> OwnersToComponents;
+	// Keyed by the owning actor rather than its name so the requested owner name can be matched
+	// with UTempoCoreUtils::ActorNameMatches, which accepts either spelling of a Blueprint name.
+	TMap<const AActor*, TArray<UTempoLidar*>> OwnersToComponents;
 	for (TObjectIterator<UTempoLidar> ComponentIt; ComponentIt; ++ComponentIt)
 	{
 		if (IsValid(*ComponentIt) && ComponentIt->GetWorld() == GetWorld())
 		{
-			OwnersToComponents.FindOrAdd(ComponentIt->GetOwnerName()).Add(*ComponentIt);
+			OwnersToComponents.FindOrAdd(ComponentIt->GetOwner()).Add(*ComponentIt);
 		}
 	}
 
@@ -384,9 +388,8 @@ void UTempoSensorServiceSubsystem::StreamLidarScans(const TempoSensors::LidarSca
 
 	for (const auto& OwnerComponents : OwnersToComponents)
 	{
-		const FString& OwnerName = OwnerComponents.Key;
 		const TArray<UTempoLidar*>& Components = OwnerComponents.Value;
-		if (OwnerName.Equals(RequestedOwnerName, ESearchCase::IgnoreCase))
+		if (UTempoCoreUtils::ActorNameMatches(OwnerComponents.Key, RequestedOwnerName))
 		{
 			for (UTempoLidar* Component : Components)
 			{

@@ -82,7 +82,10 @@ namespace
 		for (AActor* MovementController : MovementControllers)
 		{
 			ATempoMovementController* Controller = Cast<ATempoMovementController>(MovementController);
-			if (Controller->GetPawnName().Equals(RequestedName, ESearchCase::IgnoreCase))
+			// Match the name this service reports (GetPawnName is virtual, so a subclass may spell
+			// it its own way) and, failing that, either spelling of the controlled pawn's name.
+			if (Controller->GetPawnName().Equals(RequestedName, ESearchCase::IgnoreCase)
+				|| UTempoCoreUtils::ActorNameMatches(Controller->GetPawn(), RequestedName))
 			{
 				return Controller;
 			}
@@ -98,7 +101,7 @@ namespace
 		UGameplayStatics::GetAllActorsOfClass(World, ASplineActor::StaticClass(), SplineActors);
 		for (AActor* SplineActor : SplineActors)
 		{
-			if (UTempoCoreUtils::GetActorIdentifier(SplineActor).Equals(RequestedName, ESearchCase::IgnoreCase))
+			if (UTempoCoreUtils::ActorNameMatches(SplineActor, RequestedName))
 			{
 				return Cast<ASplineActor>(SplineActor);
 			}
@@ -112,7 +115,7 @@ namespace
 		UGameplayStatics::GetAllActorsOfClass(World, APawn::StaticClass(), Pawns);
 		for (AActor* Pawn : Pawns)
 		{
-			if (UTempoCoreUtils::GetActorIdentifier(Pawn).Equals(RequestedName, ESearchCase::IgnoreCase))
+			if (UTempoCoreUtils::ActorNameMatches(Pawn, RequestedName))
 			{
 				return Cast<APawn>(Pawn);
 			}
@@ -269,7 +272,7 @@ void UTempoMovementControlServiceSubsystem::PawnMoveToLocation(const PawnMoveToL
 	{
 		if (const APawn* Pawn = Cast<AController>(Controller)->GetPawn())
 		{
-			if (UTempoCoreUtils::GetActorIdentifier(Pawn).Equals(UTF8_TO_TCHAR(Request.pawn().c_str()), ESearchCase::IgnoreCase))
+			if (UTempoCoreUtils::ActorNameMatches(Pawn, FString(UTF8_TO_TCHAR(Request.pawn().c_str()))))
 			{
 				AAIController* AIController = Cast<AAIController>(Controller);
 				FVector Destination = QuantityConverter<M2CM, R2L>::Convert(FVector(Request.location().x(), Request.location().y(), Request.location().z()));

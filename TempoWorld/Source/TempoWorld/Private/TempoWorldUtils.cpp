@@ -10,7 +10,10 @@ AActor* GetActorWithName(const UWorld* World, const FString& Name)
 {
 	for (TActorIterator<AActor> ActorIt(World); ActorIt; ++ActorIt)
 	{
-		if (UTempoCoreUtils::GetActorIdentifier(*ActorIt).Equals(Name, ESearchCase::IgnoreCase))
+		// Matches the identifier the API hands out and the raw object name, so a client holding a
+		// Blueprint actor's "_C"-bearing name ("BP_Foo_C_1" -- what cooked builds used to report,
+		// and what the editor reports before a label exists) still resolves.
+		if (UTempoCoreUtils::ActorNameMatches(*ActorIt, Name))
 		{
 			return *ActorIt;
 		}

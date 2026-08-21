@@ -142,9 +142,22 @@ rclcpp (TempoROS) from GitHub releases (`ttp_manifest.json` per dep). Not commit
   `TempoConversion.h` (`QuantityConverter<CM2M, L2R>`, etc.). Note the documented exception:
   scalar `set_float_property` / vector `set_*_property` do **not** auto-convert (only
   transforms do) — they take Unreal-native units.
-- **Actor identity over RPC**: use `UTempoCoreUtils::GetActorIdentifier`, *not*
-  `GetActorNameOrLabel` (editor label race adds/drops `_C`). See `actor_identifier_rpc_naming`
-  memory.
+- **Names over RPC** — three rules about Unreal's Blueprint `_C` suffix:
+  1. **Class** names are reported verbatim (`UClass::GetName()`, so `BP_Foo_C`). The real name is
+     the honest one, and it keeps a native `Foo` distinguishable from a Blueprint `Foo_C`.
+  2. **Actor** names are reported *without* it (`BP_Foo_1`), because they can't carry it
+     consistently — an editor actor's name is its label, which Unreal itself de-`_C`s and a user
+     may rename freely. Use `UTempoCoreUtils::GetActorIdentifier`, *not* `GetActorNameOrLabel`
+     (the editor label race and cooked builds both leak `_C`).
+  3. **Everything is accepted in either spelling**, so a reported value feeds straight back in.
+     Match with `ClassNameMatches` / `GetSubClassWithName` (classes) or `ActorNameMatches` /
+     `GetActorWithName` (actors) — never a bare `==` on a name.
+
+  `GetClassNameWithoutBlueprintSuffix` is the canonical form both spellings reduce to; it is for
+  matching and for keying maps a client can address either way, *not* for reporting. The
+  convention is documented for clients in the banner at the top of
+  `TempoWorld/.../WorldControl.proto`, unit-tested in `TempoCore/.../Tests/TempoNamingTest.cpp`,
+  and asserted end-to-end by the `world` group. See `actor_identifier_rpc_naming` memory.
 - **Config**: `UTempoCoreSettings` (`UDeveloperSettings`), stored under `Config/` with
   command-line overrides. Plugin-owned config (incl. CoreRedirects) belongs in the **plugin's**
   Config, not the project's (`plugin_config_scope` memory).
@@ -185,6 +198,7 @@ gRPC. Functional/rendering/agents/ROS layers are still not built.
 | Unit/handedness conversion | `TempoCore/.../Tests/TempoConversionTest.cpp` | `QuantityConverter` factors, vector/rotator/quat handedness, round trips |
 | Camera/lidar lens math | `TempoSensors/.../Tests/TempoLensModelsTest.cpp` | factory, Brown-Conrady/Rational/Kannala-Brandt/Equidistant/Double-Sphere distort↔undistort round trips, focal-length math |
 | Kinematic motion models | `TempoMovement/.../Tests/TempoKinematicsTest.cpp` | bicycle & unicycle forward (`SimulateMotion`) + inverse (`ComputeNormalizedSteeringForYawRate`) models, saturation, forward/inverse round trip, off-origin `RotationCenter` pivoting |
+| RPC naming | `TempoCore/.../Tests/TempoNamingTest.cpp` | Blueprint `_C` suffix stripping, native-class names left alone, either-spelling class-name matching |
 
 **Convention for testing UObject components** (see `TempoKinematicsTest.cpp`): a const method
 that only reads the component's own properties (e.g. the inverse motion model) can be tested by

@@ -2,8 +2,13 @@
 
 #pragma once
 
+#include "TempoCoreUtils.h"
+
 #include "AssetRegistry/AssetRegistryModule.h"
 
+// Finds the actor a client named. Accepts the name Tempo reports
+// (UTempoCoreUtils::GetActorIdentifier) and the raw object name, so a Blueprint actor resolves
+// whether or not the caller's name carries the "_C" suffix.
 AActor* GetActorWithName(const UWorld* World, const FString& Name);
 
 UObject* GetAssetByPath(const FString& AssetPath);
@@ -24,6 +29,9 @@ T* GetComponentWithName(const AActor* Actor, const FString& Name)
 	return nullptr;
 }
 
+// Finds the subclass of T a client named. Accepts the class name Tempo reports (the UClass name,
+// Blueprint "_C" suffix and all) and, for Blueprint classes, the suffix-free spelling. Native
+// classes are searched first, so an exact native match always wins.
 // https://kantandev.com/articles/finding-all-classes-blueprints-with-a-given-base
 template <typename T>
 UClass* GetSubClassWithName(const FString& Name)
@@ -48,7 +56,7 @@ UClass* GetSubClassWithName(const FString& Name)
 		{
 			continue;
 		}
-		if (Class->GetName().Equals(Name, ESearchCase::IgnoreCase))
+		if (UTempoCoreUtils::ClassNameMatches(Class, Name))
 		{
 			return Class;
 		}
@@ -109,8 +117,9 @@ UClass* GetSubClassWithName(const FString& Name)
 				{
 					continue;
 				}
-				// LeftChop to remove the "_C"
-				if (ClassName.LeftChop(2).Equals(Name, ESearchCase::IgnoreCase))
+				// ClassName is a generated class name, so it always ends in "_C"; match it with
+				// the suffix and without, so either spelling of the request resolves.
+				if (UTempoCoreUtils::ClassNameMatches(ClassName, Name))
 				{
 					FString N = Asset.GetObjectPathString() + TEXT("_C");
 					return LoadObject<UClass>(nullptr, *N);

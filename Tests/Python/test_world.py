@@ -79,3 +79,43 @@ def test_negative_y_round_trips_handedness(sim_server):
         assert state.transform.location.y == pytest.approx(-5.0, abs=0.05)
     finally:
         tw.destroy_actor(actor=name)
+
+
+def test_actor_names_omit_blueprint_suffix(sim_server):
+    """Actor names never carry Unreal's Blueprint "_C" suffix, in any build type — unlike
+    actor_type, which is reported as the real UClass name. See the naming banner in
+    TempoWorld/WorldControl.proto."""
+    for a in tw.get_all_actors().actors:
+        # A Blueprint instance's object name is its class name plus an index ("BP_Foo_C_1"), so if
+        # the suffix survived, the name would still start with the full actor_type.
+        if a.actor_type.endswith("_C"):
+            assert not a.name.startswith(a.actor_type), (
+                f"actor name '{a.name}' kept the _C suffix from '{a.actor_type}'"
+            )
+
+
+def test_spawn_accepts_type_with_and_without_suffix(sim_server):
+    """A reported actor_type is directly re-spawnable, and a Blueprint class resolves whether or
+    not the caller spells the "_C" suffix. StaticMeshActor is native, so only the unsuffixed
+    spelling names it — the suffixed one must be rejected rather than silently matched."""
+    spawned = tw.spawn_actor(actor_type=SPAWNABLE_TYPE, transform=_transform(0.0, 0.0, 0.0))
+    try:
+        reported = next(a.actor_type for a in tw.get_all_actors().actors if a.name == spawned.name)
+        assert reported == SPAWNABLE_TYPE
+        # Round trip: the reported type spawns another one.
+        again = tw.spawn_actor(actor_type=reported, transform=_transform(0.0, 0.0, 1.0))
+        tw.destroy_actor(actor=again.name)
+    finally:
+        tw.destroy_actor(actor=spawned.name)
+
+    with pytest.raises(Exception):
+        tw.spawn_actor(actor_type=SPAWNABLE_TYPE + "_C", transform=_transform(0.0, 0.0, 0.0))
+
+
+def test_actor_lookup_accepts_reported_name(sim_server):
+    """Every name get_all_actors reports resolves in a lookup — the property of actor naming that
+    the "_C" cleanup is really about. get_all_components is the cheapest name-only lookup: its
+    single failure mode is an unresolvable actor name."""
+    for a in tw.get_all_actors().actors:
+        resp = tw.get_all_components(actor=a.name)
+        assert all(c.actor == a.name for c in resp.components)

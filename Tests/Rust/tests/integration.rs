@@ -68,3 +68,33 @@ fn spawn_query_destroy_round_trip() {
 
     tempo_sim::tempo_world::destroy_actor(spawned.name).expect("destroy_actor");
 }
+
+#[test]
+fn actor_names_omit_blueprint_suffix_and_resolve() {
+    connect();
+
+    // Unreal names the class a Blueprint generates "BP_Foo_C", and that suffix leaks into instance
+    // names ("BP_Foo_C_1"). Tempo reports the class name as-is but strips the suffix from instance
+    // names, and every name it reports must resolve on the way back in. See the naming banner in
+    // TempoWorld/WorldControl.proto.
+    let actors = tempo_sim::tempo_world::get_all_actors()
+        .expect("get_all_actors")
+        .actors;
+
+    for actor in &actors {
+        // A Blueprint instance's object name is its class name plus an index, so if the suffix
+        // survived, the name would still start with the full actor_type.
+        if actor.actor_type.ends_with("_C") {
+            assert!(
+                !actor.name.starts_with(&actor.actor_type),
+                "actor name '{}' kept the _C suffix from '{}'",
+                actor.name,
+                actor.actor_type
+            );
+        }
+
+        // The reported name resolves: get_all_components' only failure mode is an unknown actor.
+        tempo_sim::tempo_world::get_all_components(actor.name.clone())
+            .unwrap_or_else(|e| panic!("get_all_components('{}'): {e}", actor.name));
+    }
+}

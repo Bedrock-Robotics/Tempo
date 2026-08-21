@@ -4,6 +4,11 @@ syntax = "proto3";
 
 import "TempoCore/Geometry.proto";
 
+// Actor naming: actor names never carry Unreal's Blueprint "_C" suffix ("BP_Foo_1", not
+// "BP_Foo_C_1"), in any build type, and every name this API accepts works with the suffix or
+// without it. Matching is case-insensitive. See WorldControl.proto for the full convention,
+// including how class names differ.
+
 // Collision channel for physics queries.
 enum CollisionChannel {
   CC_UNKNOWN = 0;
@@ -47,7 +52,10 @@ message OverlapEventResponse {
   string overlapped_actor_name = 1;
   // Name of the actor that overlapped with `overlapped_actor_name`.
   string overlapping_actor_name = 2;
-  // Class/type name of `overlapping_actor_name`.
+  // Semantic classification of `overlapping_actor_name` (e.g. "Person", "Vehicle"), from the
+  // active actor classifier -- TempoSensors' semantic label table when it is present, otherwise
+  // Tempo's crude default classifier. NOT a class name: to get that, look the actor up in
+  // WorldControlService.GetAllActors.
   string overlapping_actor_type = 3;
 }
 

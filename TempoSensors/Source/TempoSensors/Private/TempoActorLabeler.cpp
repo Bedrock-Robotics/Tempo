@@ -133,27 +133,38 @@ void UTempoActorLabeler::HandleGetSemanticClasses(const TempoCore::Empty& Reques
 {
 	TempoSensors::GetSemanticClassesResponse Response;
 
-	// Build reverse mapping: semantic_id -> actor types
+	// Build reverse mapping: semantic_id -> actor types. Types are reported as their UClass name,
+	// Blueprint "_C" suffix and all, while ActorTypeSemanticIdOverrides is keyed by the suffix-free
+	// form (so a client may address a type by either spelling), so keep a map from the key back to
+	// the reported spelling for the classes the label table names.
 	TMap<int32, TArray<FName>> SemanticIdToActorTypes;
+	TMap<FName, FName> ReportedActorTypeByKey;
 
 	// Include DataTable assignments
 	for (const auto& [ActorClass, LabelName] : ActorSemanticLabels)
 	{
+		const FName ReportedActorType = ActorClass->GetFName();
+		ReportedActorTypeByKey.Add(FName(UTempoCoreUtils::GetClassNameWithoutBlueprintSuffix(ActorClass.Get())), ReportedActorType);
 		if (const int32* SemanticId = SemanticIds.Find(LabelName))
 		{
-			SemanticIdToActorTypes.FindOrAdd(*SemanticId).Add(ActorClass->GetFName());
+			SemanticIdToActorTypes.FindOrAdd(*SemanticId).Add(ReportedActorType);
 		}
 	}
 
 	// Include runtime overrides (they take precedence)
-	for (const auto& [ActorTypeName, OverrideSemanticId] : ActorTypeSemanticIdOverrides)
+	for (const auto& [ActorTypeKey, OverrideSemanticId] : ActorTypeSemanticIdOverrides)
 	{
+		// An override may name a class the label table never mentions (and which may not even be
+		// loaded), in which case the key itself is the best spelling available.
+		const FName* Reported = ReportedActorTypeByKey.Find(ActorTypeKey);
+		const FName ReportedActorType = Reported ? *Reported : ActorTypeKey;
+
 		// Remove from old mapping if present, add to new
 		for (auto& [Id, Types] : SemanticIdToActorTypes)
 		{
-			Types.Remove(ActorTypeName);
+			Types.Remove(ReportedActorType);
 		}
-		SemanticIdToActorTypes.FindOrAdd(OverrideSemanticId).Add(ActorTypeName);
+		SemanticIdToActorTypes.FindOrAdd(OverrideSemanticId).Add(ReportedActorType);
 	}
 
 	// Build reverse mapping: semantic_id -> static mesh paths
@@ -208,7 +219,10 @@ void UTempoActorLabeler::HandleGetSemanticClasses(const TempoCore::Empty& Reques
 
 void UTempoActorLabeler::HandleSetActorTypeSemanticId(const TempoSensors::SetActorTypeSemanticIdRequest& Request, const TResponseDelegate<TempoCore::Empty>& ResponseContinuation)
 {
-	const FName ActorType = FName(UTF8_TO_TCHAR(Request.actor_type().c_str()));
+	// Key overrides by the suffix-free form of the class name, so a client may pass a Blueprint
+	// type with or without its "_C" suffix and hit the same entry. Note this is the lookup key,
+	// not the spelling this service reports -- that is the UClass name (see GetSemanticClasses).
+	const FName ActorTypeKey = FName(UTempoCoreUtils::StripBlueprintClassSuffix(FString(UTF8_TO_TCHAR(Request.actor_type().c_str()))));
 	const int32 SemanticId = Request.semantic_id();
 
 	// Validate range
@@ -223,17 +237,17 @@ void UTempoActorLabeler::HandleSetActorTypeSemanticId(const TempoSensors::SetAct
 	// Store or clear override
 	if (SemanticId < 0)
 	{
-		ActorTypeSemanticIdOverrides.Remove(ActorType);
+		ActorTypeSemanticIdOverrides.Remove(ActorTypeKey);
 	}
 	else
 	{
-		ActorTypeSemanticIdOverrides.Add(ActorType, SemanticId);
+		ActorTypeSemanticIdOverrides.Add(ActorTypeKey, SemanticId);
 	}
 
 	// Re-label all existing actors of this type
 	for (TActorIterator<AActor> ActorItr(GetWorld()); ActorItr; ++ActorItr)
 	{
-		if (ActorItr->GetClass()->GetFName() == ActorType)
+		if (FName(UTempoCoreUtils::GetClassNameWithoutBlueprintSuffix(ActorItr->GetClass())) == ActorTypeKey)
 		{
 			UnLabelActor(*ActorItr);
 			LabelActor(*ActorItr);
@@ -377,7 +391,7 @@ void UTempoActorLabeler::HandleGetAllActorLabels(const TempoCore::Empty& Request
 		const FInstanceSemanticIdPair& IdPair = LabeledObjectPair.Value;
 
 		auto* ActorInfo = Response.add_actors();
-		ActorInfo->set_actor_name(TCHAR_TO_UTF8(*Actor->GetName()));
+		ActorInfo->set_actor_name(TCHAR_TO_UTF8(*UTempoCoreUtils::GetActorIdentifier(Actor)));
 		ActorInfo->set_actor_type(TCHAR_TO_UTF8(*Actor->GetClass()->GetName()));
 		ActorInfo->set_semantic_id(IdPair.SemanticId);
 		ActorInfo->set_instance_id(IdPair.InstanceId);
@@ -577,7 +591,7 @@ void UTempoActorLabeler::LabelActor(AActor* Actor)
 	}
 
 	// Check for type-level override first (before DataTable lookup)
-	if (const int32* TypeOverride = ActorTypeSemanticIdOverrides.Find(Actor->GetClass()->GetFName()))
+	if (const int32* TypeOverride = ActorTypeSemanticIdOverrides.Find(FName(UTempoCoreUtils::GetClassNameWithoutBlueprintSuffix(Actor->GetClass()))))
 	{
 		FInstanceSemanticIdPair ActorIdPair;
 		ActorIdPair.SemanticId = *TypeOverride;
