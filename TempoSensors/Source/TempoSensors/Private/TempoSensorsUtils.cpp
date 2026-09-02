@@ -76,6 +76,18 @@ void ApplyPhotorealisticRenderSettings(FPostProcessSettings& OutPostProcess,
 	// Auto exposure: AEM_Histogram samples the (PPM-replaced, for the camera; raw scene, for the
 	// lidar) scene color histogram to compute exposure. The aggressive speed-up/down keeps the
 	// exposure responsive when the scene brightness shifts rapidly between captures.
+	//
+	// Low/High percent bound the histogram band whose geometric mean of log-luminance becomes the
+	// metered scene luminance, which the tonemapper then maps to 0.18 mid-grey. These were 75/85 —
+	// highlight-priority metering on the brightest sixth of the frame, which in an outdoor scene is
+	// always sky. That pins exposure to sky luminance, so rendered ground brightness tracks the
+	// ground-to-sky ratio rather than anything absolute: as the sun drops, that ratio widens and the
+	// ground slides monotonically further under mid-grey. Measured against real cameras on matched
+	// scenes, sim rendered 81% of real median brightness at 996 W/m^2 insolation but only 15% at
+	// 9 W/m^2, with correction gamma tracking insolation at rho = -0.96 (SIM-205). No exposure clamp
+	// is involved — min/max brightness sit at the engine's extended-range defaults, -10/+20 EV100,
+	// some 30 stops wide. Back to the engine default 10/90: a broad trimmed mean over the frame that
+	// discards only the extreme tails, so the metered value reflects the whole scene.
 	OutPostProcess.bOverride_AutoExposureMethod = true;
 	OutPostProcess.AutoExposureMethod = AEM_Histogram;
 	OutPostProcess.bOverride_AutoExposureSpeedUp = true;
@@ -83,9 +95,9 @@ void ApplyPhotorealisticRenderSettings(FPostProcessSettings& OutPostProcess,
 	OutPostProcess.bOverride_AutoExposureSpeedDown = true;
 	OutPostProcess.AutoExposureSpeedDown = 20.0;
 	OutPostProcess.bOverride_AutoExposureLowPercent = true;
-	OutPostProcess.AutoExposureLowPercent = 75.0;
+	OutPostProcess.AutoExposureLowPercent = 10.0;
 	OutPostProcess.bOverride_AutoExposureHighPercent = true;
-	OutPostProcess.AutoExposureHighPercent = 85.0;
+	OutPostProcess.AutoExposureHighPercent = 90.0;
 
 	// Lumen
 	OutPostProcess.bOverride_DynamicGlobalIlluminationMethod = true;
