@@ -40,6 +40,11 @@ protected:
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
 	float SearchDistance = 1000000.0; // 10km
 
+	// If true, we will trace through Movable components, so a physics body, another vehicle, or a load carried
+	// overhead is never taken for the ground. Turn this off if the ground itself is Movable.
+	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	bool bIgnoreMovableComponents = true;
+
 	// If true, we will not tilt the owner further than MaxSlopeAngle to match the ground.
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
 	bool bLimitSlopeAngle = true;
