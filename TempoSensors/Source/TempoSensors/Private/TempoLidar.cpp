@@ -1109,7 +1109,7 @@ void UTempoLidar::InitSharedRenderTarget()
 
 	SharedTextureTarget = NewObject<UTextureRenderTarget2D>(this);
 	SharedTextureTarget->TargetGamma = GetDefault<UTempoSensorsSettings>()->GetSceneCaptureGamma();
-	SharedTextureTarget->bGPUSharedFlag = true;
+	SharedTextureTarget->bGPUSharedFlag = false;
 	if (bColorEnabled)
 	{
 		// 4x float32 lanes per pixel, used as raw 32-bit byte carriers. The WithColor PPM writes
