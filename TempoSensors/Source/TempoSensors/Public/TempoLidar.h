@@ -458,7 +458,7 @@ protected:
 	// MinDetectableIntensity; the medium itself produces an echo of its own. Off, none of the extra
 	// passes run and the output is unchanged.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="TempoLidar")
-	bool bSimulateParticipatingMedia = true;
+	bool bSimulateParticipatingMedia = false;
 
 	// Participating media (fog, dust, smoke): also rasterize translucent primitives (Niagara sprites
 	// and ribbons, mesh particles, translucent meshes) into each beam's profile with their own
