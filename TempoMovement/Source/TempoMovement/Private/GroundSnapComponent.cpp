@@ -7,7 +7,14 @@
 #include "TempoConversion.h"
 #include "TempoCoreUtils.h"
 
+#include "Components/PrimitiveComponent.h"
 #include "DrawDebugHelpers.h"
+
+namespace
+{
+	// How many Movable components one corner's trace may pass through before we give up on finding the ground.
+	constexpr int32 MaxIgnoredMovableComponents = 16;
+}
 
 UGroundSnapComponent::UGroundSnapComponent()
 {
@@ -92,7 +99,7 @@ void UGroundSnapComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		return;
 	}
 
-	const FCollisionQueryParams Params(TEXT("GroundSnap"), false, GetOwner());
+	FCollisionQueryParams Params(TEXT("GroundSnap"), false, GetOwner());
 
 	TArray<FHitResult> GroundHits;
 	for (const FVector2D& CornerOffset : CornerOffsets)
@@ -101,7 +108,20 @@ void UGroundSnapComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		FHitResult GroundHit;
 		const FVector Start = TraceCorner + SearchDistance * FVector::UpVector;
 		const FVector End = TraceCorner - SearchDistance * FVector::UpVector;
-		GetWorld()->LineTraceSingleByChannel(GroundHit, Start, End, ECC_WorldStatic, Params);
+		// We trace down from far above, so anything over the corner is hit first. Each Movable component we hit
+		// is ignored for the rest of this tick and the trace repeated.
+		for (int32 Trace = 0; Trace <= MaxIgnoredMovableComponents; ++Trace)
+		{
+			GetWorld()->LineTraceSingleByChannel(GroundHit, Start, End, ECC_WorldStatic, Params);
+			const UPrimitiveComponent* HitComponent = GroundHit.GetComponent();
+			if (!GroundHit.bBlockingHit || !bIgnoreMovableComponents || !HitComponent ||
+				HitComponent->Mobility != EComponentMobility::Movable)
+			{
+				break;
+			}
+			Params.AddIgnoredComponent(HitComponent);
+			GroundHit = FHitResult();
+		}
 		if (!GroundHit.bBlockingHit)
 		{
 			UE_LOG(LogTempoMovement, Warning, TEXT("Could not find ground below %s."), *GetName());
