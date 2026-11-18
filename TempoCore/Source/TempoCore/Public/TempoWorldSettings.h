@@ -126,10 +126,15 @@ protected:
 
 	FDelegateHandle RenderingSettingsChangedHandle;
 
+public:
+	/**
+	 * Re-derive Tempo's clock (the fixed step count, and the wall clock anchor) from the world's time. Call after
+	 * setting the world's time, e.g. when restoring a saved simulation state.
+	 */
+	void SyncFixedPointTime();
+
 private:
 	void OnTimeSettingsChanged();
-
-	void SyncFixedPointTime();
 
 	void OnWorldTickEnd(UWorld* World, ELevelTick TickType, float DeltaSeconds);
 
