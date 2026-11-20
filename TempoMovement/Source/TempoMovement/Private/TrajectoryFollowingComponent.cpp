@@ -63,22 +63,41 @@ void UTrajectoryFollowingComponent::StartFollowing()
 		return;
 	}
 
+	if (EnsureController())
+	{
+		Controller->FollowTrajectory(Spline, OwnerPawn, Config);
+	}
+}
+
+ATrajectoryFollowingController* UTrajectoryFollowingComponent::EnsureController()
+{
+	if (Controller)
+	{
+		return Controller;
+	}
+
+	UWorld* World = GetWorld();
+	const AActor* Owner = GetOwner();
+	if (!World || !Owner)
+	{
+		return nullptr;
+	}
+
 	if (!ControllerClass)
 	{
 		ControllerClass = ATrajectoryFollowingController::StaticClass();
 	}
 
-	if (!Controller)
-	{
-		// Don't set the pawn as the controller's owner: once the controller possesses the pawn,
-		// PossessedBy() makes the pawn owned by the controller, which would form an owner loop.
-		Controller = GetWorld()->SpawnActor<ATrajectoryFollowingController>(ControllerClass);
-	}
-
-	if (Controller)
-	{
-		Controller->FollowTrajectory(Spline, OwnerPawn, Config);
-	}
+	// Don't set the pawn as the controller's owner: once the controller possesses the pawn,
+	// PossessedBy() makes the pawn owned by the controller, which would form an owner loop.
+	FActorSpawnParameters SpawnParameters;
+	// A name that follows from the pawn's. A name the engine makes up differs from one process to
+	// the next, so nothing that has to find this controller again in another process (a saved
+	// simulation state, a log) could.
+	SpawnParameters.Name = FName(*FString::Printf(TEXT("%s_TrajectoryFollowingController"), *Owner->GetName()));
+	SpawnParameters.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Requested;
+	Controller = World->SpawnActor<ATrajectoryFollowingController>(ControllerClass, FTransform::Identity, SpawnParameters);
+	return Controller;
 }
 
 void UTrajectoryFollowingComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
