@@ -210,7 +210,7 @@ pub fn spawn_actor<T: Class>(
     relative_to_actor: Option<&ObjectRef>,
 ) -> Result<T, TempoError> {
     note_origin::<T>();
-    let request = spawn_request::<T>(false, transform, relative_to_actor)?;
+    let request = spawn_request::<T>(false, None, transform, relative_to_actor)?;
     let response = crate::tempo_world::spawn_actor(request)?;
     Ok(T::from_object(ObjectRef::actor(response.name).with_class(T::PATH)))
 }
@@ -221,7 +221,35 @@ pub async fn spawn_actor_async<T: Class>(
     relative_to_actor: Option<&ObjectRef>,
 ) -> Result<T, TempoError> {
     note_origin::<T>();
-    let request = spawn_request::<T>(false, transform, relative_to_actor)?;
+    let request = spawn_request::<T>(false, None, transform, relative_to_actor)?;
+    let response = crate::tempo_world::spawn_actor_async(request).await?;
+    Ok(T::from_object(ObjectRef::actor(response.name).with_class(T::PATH)))
+}
+
+/// Spawn one actor of a class under a name of the caller's choosing.
+///
+/// A name the engine makes up differs from one process to the next. Name the actor when another
+/// process must find the same one again, to restore saved state onto it for example. Fails if the
+/// name is taken or is not a valid object name.
+pub fn spawn_actor_named<T: Class>(
+    name: &str,
+    transform: Option<Transform>,
+    relative_to_actor: Option<&ObjectRef>,
+) -> Result<T, TempoError> {
+    note_origin::<T>();
+    let request = spawn_request::<T>(false, Some(name), transform, relative_to_actor)?;
+    let response = crate::tempo_world::spawn_actor(request)?;
+    Ok(T::from_object(ObjectRef::actor(response.name).with_class(T::PATH)))
+}
+
+/// Spawn one actor of a class under a name of the caller's choosing, without blocking.
+pub async fn spawn_actor_named_async<T: Class>(
+    name: &str,
+    transform: Option<Transform>,
+    relative_to_actor: Option<&ObjectRef>,
+) -> Result<T, TempoError> {
+    note_origin::<T>();
+    let request = spawn_request::<T>(false, Some(name), transform, relative_to_actor)?;
     let response = crate::tempo_world::spawn_actor_async(request).await?;
     Ok(T::from_object(ObjectRef::actor(response.name).with_class(T::PATH)))
 }
@@ -279,7 +307,7 @@ where
     F: FnOnce(&T) -> Result<(), TempoError>,
 {
     note_origin::<T>();
-    let request = spawn_request::<T>(true, transform, relative_to_actor)?;
+    let request = spawn_request::<T>(true, None, transform, relative_to_actor)?;
     let response = crate::tempo_world::spawn_actor(request)?;
     let handle = T::from_object(ObjectRef::actor(&response.name).with_class(T::PATH));
 
@@ -347,7 +375,7 @@ where
     Fut: std::future::Future<Output = Result<(), TempoError>>,
 {
     note_origin::<T>();
-    let request = spawn_request::<T>(true, transform, relative_to_actor)?;
+    let request = spawn_request::<T>(true, None, transform, relative_to_actor)?;
     let response = crate::tempo_world::spawn_actor_async(request).await?;
     let object = ObjectRef::actor(&response.name).with_class(T::PATH);
 
@@ -362,6 +390,7 @@ where
 
 fn spawn_request<T: Class>(
     deferred: bool,
+    name: Option<&str>,
     transform: Option<Transform>,
     relative_to_actor: Option<&ObjectRef>,
 ) -> Result<pb::SpawnActorRequest, TempoError> {
@@ -370,6 +399,7 @@ fn spawn_request<T: Class>(
         deferred,
         transform,
         relative_to_actor: optional_actor(relative_to_actor, "relative_to_actor")?,
+        name: name.unwrap_or_default().to_string(),
     })
 }
 

@@ -78,6 +78,14 @@ public:
 
 	const FTrajectoryFollowingConfig& GetConfig() const { return Config; }
 
+	// Spawn the controller now if there is none yet, without a trajectory to follow; it idles until
+	// one is given. For an owner that wants every actor it will ever use to exist, under a fixed
+	// name, from the start, rather than to appear at the first trajectory. The controller is named
+	// after the owner (<owner>_TrajectoryFollowingController). Returns null if it could not be
+	// spawned.
+	UFUNCTION(BlueprintCallable, Category = "Trajectory")
+	ATrajectoryFollowingController* EnsureController();
+
 protected:
 	// Spawn (or reuse) the controller and have it follow the current Spline with the current Config.
 	// No-op if no spline is set or the owner is not a pawn.
