@@ -362,6 +362,21 @@ void ATempoWorldSettings::SyncFixedPointTime()
 	FixedStepsCount = static_cast<uint64>(FMath::FloorToDouble(SimTime * Settings->GetSimulatedStepsPerSecond() + 1.e-3));
 }
 
+bool ATempoWorldSettings::SetSimTime(double SimTime)
+{
+	UWorld* World = GetWorld();
+	if (!World || StepsIntoGameFrame > 0 || StepsToSimulate.IsSet())
+	{
+		return false;
+	}
+
+	// Unpaused time keeps its offset from world time, which is what it has run on while paused.
+	World->UnpausedTimeSeconds += SimTime - World->TimeSeconds;
+	World->TimeSeconds = SimTime;
+	SyncFixedPointTime();
+	return true;
+}
+
 bool ATempoWorldSettings::Step(int32 NumSteps, TFunction<void(ETempoStepResult)> OnComplete)
 {
 	if (OnComplete && PendingStepCompletion)

@@ -58,6 +58,13 @@ public:
 	// this many steps of 1 / SimulatedStepsPerSecond (on the step grid, after the first step).
 	uint64 GetFixedStepsCount() const { return FixedStepsCount; }
 
+	// Moves sim time to SimTime, for a client that restores a saved state of the simulation: world time
+	// and, with it, Tempo's own clock (the fixed step count and the wall clock anchor), which would
+	// otherwise carry on from where it was. The next step then ends one step after SimTime. Only at a
+	// game frame boundary: returns false, having changed nothing, part-way through a game frame or
+	// while a Step is in progress.
+	bool SetSimTime(double SimTime);
+
 	// Whether a request to a GameFrameOnly RPC must wait: between frames, outside a world tick, or
 	// part-way through a game frame. FTempoServer asks before handling one.
 	bool ShouldHoldGameFrameOnlyRequests() const { return bInStepLoop || StepsIntoGameFrame > 0; }
