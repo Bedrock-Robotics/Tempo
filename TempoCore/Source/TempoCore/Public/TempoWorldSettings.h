@@ -60,9 +60,9 @@ public:
 
 	// Moves sim time to SimTime, for a client that restores a saved state of the simulation: world time
 	// and, with it, Tempo's own clock (the fixed step count and the wall clock anchor), which would
-	// otherwise carry on from where it was. The next step then ends one step after SimTime. Only at a
-	// game frame boundary: returns false, having changed nothing, part-way through a game frame or
-	// while a Step is in progress.
+	// otherwise carry on from where it was. The next step then ends one step after SimTime. Part-way
+	// through a game frame, the frame keeps the steps it has run, and its actors tick over all of
+	// them. Returns false, having changed nothing, while a Step is in progress.
 	bool SetSimTime(double SimTime);
 
 	// Whether a request to a GameFrameOnly RPC must wait: between frames, outside a world tick, or
