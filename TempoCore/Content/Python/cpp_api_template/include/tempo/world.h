@@ -62,9 +62,10 @@ Result<unreal::ObjectRef> actor_of_class(std::string_view class_path, std::strin
 /// Ask the sim to resolve a subsystem, so one that declined to exist fails here.
 Result<void> resolve_subsystem(std::string_view class_path);
 
-/// Spawn one actor and return its name.
+/// Spawn one actor and return its name. An empty `name` leaves the name to the engine.
 Result<std::string> spawn(std::string_view class_path, bool deferred,
-						  const std::optional<Transform>& transform, const unreal::Handle* relative_to_actor);
+						  const std::optional<Transform>& transform, const unreal::Handle* relative_to_actor,
+						  std::string_view name);
 
 /// An actor's components of a class or a subclass of it, each carrying its real class.
 Result<std::vector<unreal::ObjectRef>> components_of_class(const unreal::Handle& actor, std::string_view class_path);
@@ -120,13 +121,17 @@ Result<unreal::ObjectRef> find_actor(std::string_view name);
 
 /// Spawn one actor of a class and return a handle to it: tempo_world::spawn_actor, typed. The
 /// transform is SI, as tempo_world's is.
+///
+/// A name the engine makes up differs from one process to the next. Pass `name` when another
+/// process must find the same actor again, to restore saved state onto it for example. The spawn
+/// fails if the name is taken or is not a valid object name.
 template <unreal::Class T>
 Result<T> spawn_actor(const std::optional<Transform>& transform = std::nullopt,
-					  const unreal::Handle* relative_to_actor = nullptr) {
+					  const unreal::Handle* relative_to_actor = nullptr, std::string_view name = {}) {
 	unreal::note_origin<T>();
-	auto name = detail::spawn(T::kPath, false, transform, relative_to_actor);
-	if (!name) return std::move(name).error();
-	return T(unreal::ObjectRef::actor(std::move(name).value()).with_class(std::string(T::kPath)));
+	auto spawned = detail::spawn(T::kPath, false, transform, relative_to_actor, name);
+	if (!spawned) return std::move(spawned).error();
+	return T(unreal::ObjectRef::actor(std::move(spawned).value()).with_class(std::string(T::kPath)));
 }
 
 /// Spawn an actor, configure it, and only then let it begin.
@@ -134,17 +139,19 @@ Result<T> spawn_actor(const std::optional<Transform>& transform = std::nullopt,
 /// What `configure` sets lands before the construction script and BeginPlay run, which is the only
 /// way to influence anything that reads it. Spawning is finished even if `configure` fails: a
 /// deferred actor left unfinished is in the world but never initialized, which is worse than one
-/// configured only partway. The error from `configure` is what comes back.
+/// configured only partway. The error from `configure` is what comes back. `name` is as for
+/// spawn_actor.
 template <unreal::Class T, typename F>
 	requires std::is_invocable_r_v<Result<void>, F, const T&>
 Result<T> spawn_actor_deferred(const std::optional<Transform>& transform,
-							   const unreal::Handle* relative_to_actor, F&& configure) {
+							   const unreal::Handle* relative_to_actor, F&& configure,
+							   std::string_view name = {}) {
 	unreal::note_origin<T>();
-	auto name = detail::spawn(T::kPath, true, transform, relative_to_actor);
-	if (!name) return std::move(name).error();
-	T handle(unreal::ObjectRef::actor(name.value()).with_class(std::string(T::kPath)));
+	auto spawned = detail::spawn(T::kPath, true, transform, relative_to_actor, name);
+	if (!spawned) return std::move(spawned).error();
+	T handle(unreal::ObjectRef::actor(spawned.value()).with_class(std::string(T::kPath)));
 	Result<void> configured = std::forward<F>(configure)(handle);
-	Result<void> finished = detail::finish_spawning(name.value());
+	Result<void> finished = detail::finish_spawning(spawned.value());
 	if (!configured) return std::move(configured).error();
 	if (!finished) return std::move(finished).error();
 	return handle;

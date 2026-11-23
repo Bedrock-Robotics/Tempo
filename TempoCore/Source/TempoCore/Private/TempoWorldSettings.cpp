@@ -362,10 +362,24 @@ void ATempoWorldSettings::SyncFixedPointTime()
 	FixedStepsCount = static_cast<uint64>(FMath::FloorToDouble(SimTime * Settings->GetSimulatedStepsPerSecond() + 1.e-3));
 }
 
+bool ATempoWorldSettings::CanSetSimTime(double SimTime) const
+{
+	const UWorld* World = GetWorld();
+	if (!World || !IsWorldsOwnSettings() || StepsToSimulate.IsSet())
+	{
+		return false;
+	}
+
+	// A time the clock cannot hold: not a number, before zero, or, part-way through a game frame, so
+	// early that the frame would have started before zero.
+	const double GameFrameElapsed = StepsIntoGameFrame > 0 ? World->TimeSeconds - GameFrameStartTime : 0.0;
+	return FMath::IsFinite(SimTime) && SimTime >= GameFrameElapsed;
+}
+
 bool ATempoWorldSettings::SetSimTime(double SimTime)
 {
 	UWorld* World = GetWorld();
-	if (!World || StepsToSimulate.IsSet())
+	if (!CanSetSimTime(SimTime))
 	{
 		return false;
 	}

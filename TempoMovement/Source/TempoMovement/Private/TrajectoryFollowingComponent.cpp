@@ -5,6 +5,7 @@
 #include "SplineActor.h"
 #include "TrajectoryFollowingController.h"
 
+#include "TempoCoreUtils.h"
 #include "TempoMovement.h"
 
 #include "GameFramework/Pawn.h"
@@ -71,14 +72,15 @@ void UTrajectoryFollowingComponent::StartFollowing()
 
 ATrajectoryFollowingController* UTrajectoryFollowingComponent::EnsureController()
 {
-	if (Controller)
+	if (IsValid(Controller))
 	{
 		return Controller;
 	}
 
+	// A controller drives a pawn, in a world that is in play.
 	UWorld* World = GetWorld();
-	const AActor* Owner = GetOwner();
-	if (!World || !Owner)
+	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	if (!World || !World->IsGameWorld() || !OwnerPawn)
 	{
 		return nullptr;
 	}
@@ -88,15 +90,33 @@ ATrajectoryFollowingController* UTrajectoryFollowingComponent::EnsureController(
 		ControllerClass = ATrajectoryFollowingController::StaticClass();
 	}
 
-	// Don't set the pawn as the controller's owner: once the controller possesses the pawn,
-	// PossessedBy() makes the pawn owned by the controller, which would form an owner loop.
-	FActorSpawnParameters SpawnParameters;
 	// A name that follows from the pawn's. A name the engine makes up differs from one process to
 	// the next, so nothing that has to find this controller again in another process (a saved
 	// simulation state, a log) could.
-	SpawnParameters.Name = FName(*FString::Printf(TEXT("%s_TrajectoryFollowingController"), *Owner->GetName()));
-	SpawnParameters.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Requested;
+	const FString ControllerName = FString::Printf(TEXT("%s_TrajectoryFollowingController"), *OwnerPawn->GetName());
+	if (ControllerName.Len() >= NAME_SIZE)
+	{
+		UE_LOG(LogTempoMovement, Error, TEXT("The name of pawn '%s' is too long to name its trajectory following controller after it"), *OwnerPawn->GetName());
+		return nullptr;
+	}
+
+	// Don't set the pawn as the controller's owner: once the controller possesses the pawn,
+	// PossessedBy() makes the pawn owned by the controller, which would form an owner loop.
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.Name = FName(*ControllerName);
+	// That name and no other: with a name the engine altered to make it unique the controller would
+	// be there, and not be found. The controller of a pawn that was destroyed keeps the name until
+	// it is garbage collected, so one of a pawn that is spawned again under the same name is
+	// renamed out of the way first.
+	SpawnParameters.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Required_ReturnNull;
+	UTempoCoreUtils::ReleaseNameOfDestroyedActor(World->GetCurrentLevel(), SpawnParameters.Name);
 	Controller = World->SpawnActor<ATrajectoryFollowingController>(ControllerClass, FTransform::Identity, SpawnParameters);
+	if (!Controller)
+	{
+		UE_LOG(LogTempoMovement, Error, TEXT("Could not spawn trajectory following controller '%s'. Is the name taken?"), *ControllerName);
+		return nullptr;
+	}
+	UTempoCoreUtils::UseNameAsActorIdentifier(Controller);
 	return Controller;
 }
 

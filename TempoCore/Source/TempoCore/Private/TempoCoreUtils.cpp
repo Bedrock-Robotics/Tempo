@@ -4,6 +4,7 @@
 
 #include "Components/MeshComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Engine/Level.h"
 #include "GameFramework/Actor.h"
 #include "PhysicsEngine/BodySetup.h"
 #include "PhysicsEngine/PhysicsAsset.h"
@@ -103,6 +104,32 @@ FString UTempoCoreUtils::GetActorIdentifier(const AActor* Actor)
 	(void)Actor->GetActorLabel();
 #endif
 	return Actor->GetActorNameOrLabel();
+}
+
+void UTempoCoreUtils::ReleaseNameOfDestroyedActor(const ULevel* Level, FName Name)
+{
+	if (!Level || Name.IsNone())
+	{
+		return;
+	}
+
+	AActor* Holder = Cast<AActor>(StaticFindObjectFast(AActor::StaticClass(), const_cast<ULevel*>(Level), Name));
+	if (Holder && !IsValid(Holder))
+	{
+		// UObject's Rename, not AActor's, which is about an actor that is in play: this one has
+		// left its level's actor list and has no registered components.
+		Holder->UObject::Rename(nullptr, nullptr, REN_DontCreateRedirectors | REN_NonTransactional | REN_DoNotDirty);
+	}
+}
+
+void UTempoCoreUtils::UseNameAsActorIdentifier(AActor* Actor)
+{
+#if WITH_EDITOR
+	if (Actor)
+	{
+		Actor->SetActorLabel(Actor->GetName(), /*bMarkDirty=*/false);
+	}
+#endif
 }
 
 FString UTempoCoreUtils::StripBlueprintClassSuffix(const FString& ClassName)

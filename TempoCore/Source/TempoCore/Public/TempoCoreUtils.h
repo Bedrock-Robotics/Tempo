@@ -6,6 +6,7 @@
 
 #include "TempoCoreUtils.generated.h"
 
+class ULevel;
 class UPrimitiveComponent;
 
 UCLASS()
@@ -58,6 +59,18 @@ public:
 	// the label here pins the value so every subsequent GetActorNameOrLabel() call agrees. This is
 	// a no-op in cooked builds, which have no labels (GetActorNameOrLabel() is always GetName()).
 	static FString GetActorIdentifier(const AActor* Actor);
+
+	// Makes room for an actor that is about to be spawned in Level under Name. An actor that has been
+	// destroyed keeps its name until it is garbage collected, and until then nothing else in its
+	// level can have it; if such an actor holds Name it is renamed out of the way. Does nothing if
+	// the name is free or is held by an object that is still alive.
+	static void ReleaseNameOfDestroyedActor(const ULevel* Level, FName Name);
+
+	// For an actor that was spawned under a name of the caller's choosing: makes that name its
+	// identifier (GetActorIdentifier). A no-op in cooked builds, where the identifier is the name
+	// already. In the editor the identifier is the label, which would otherwise be made from the
+	// class name, the same for every actor of the class that has no number in its name.
+	static void UseNameAsActorIdentifier(AActor* Actor);
 
 	// Removes a trailing Blueprint "_C" from a class name, if present.
 	//

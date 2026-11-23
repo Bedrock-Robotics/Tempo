@@ -661,4 +661,49 @@ bool FTempoTrajectoryBodySpeedTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+//
+// The component's controller: there before any trajectory when asked for, and under a name that
+// follows from the pawn's rather than one the engine makes up.
+//
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTempoTrajectoryEnsureControllerTest,
+	"Tempo.Movement.TrajectoryFollowing.EnsureController", TempoTrajectoryTestFlags)
+bool FTempoTrajectoryEnsureControllerTest::RunTest(const FString& Parameters)
+{
+	FTrajectoryTestFixture Fixture;
+
+	ATrajectoryFollowingController* Controller = Fixture.Component->EnsureController();
+	if (!Controller)
+	{
+		AddError(TEXT("EnsureController should spawn a controller"));
+		return true;
+	}
+
+	const FString ExpectedName = FString::Printf(TEXT("%s_TrajectoryFollowingController"), *Fixture.Pawn->GetName());
+	if (Controller->GetName() != ExpectedName)
+	{
+		AddError(FString::Printf(TEXT("The controller should be named '%s', got '%s'"), *ExpectedName, *Controller->GetName()));
+	}
+	if (Controller->GetPawn() != nullptr)
+	{
+		AddError(TEXT("A controller that has no trajectory yet should not possess the pawn"));
+	}
+	if (Fixture.Component->EnsureController() != Controller)
+	{
+		AddError(TEXT("A second EnsureController should return the controller the first one spawned"));
+	}
+
+	// Progress along the trajectory is reflected, so that a save of a simulation's reflected state
+	// carries where on its trajectory a pawn is.
+	for (const TCHAR* PropertyName : { TEXT("ElapsedSeconds"), TEXT("DistanceAlongSpline"), TEXT("bReachedTrajectoryEnd"), TEXT("bReversingLeg") })
+	{
+		if (!ATrajectoryFollowingController::StaticClass()->FindPropertyByName(PropertyName))
+		{
+			AddError(FString::Printf(TEXT("%s should be a reflected property"), PropertyName));
+		}
+	}
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

@@ -101,6 +101,28 @@ fn the_linked_classes_match_the_sim() {
 }
 
 #[test]
+fn an_actor_spawned_under_a_name_has_it() {
+    connect();
+    let actor = Spawned(
+        world::spawn_actor_named::<StaticMeshActor>("TypedNamedSpawnTest", None, None)
+            .expect("spawn_actor_named"),
+    );
+    assert_eq!(actor.name(), "TypedNamedSpawnTest");
+
+    let deferred = Spawned(
+        world::spawn_actor_deferred_named::<StaticMeshActor, _>(
+            "TypedNamedDeferredSpawnTest",
+            None,
+            None,
+            |actor| actor.set_b_can_be_damaged(false),
+        )
+        .expect("spawn_actor_deferred_named"),
+    );
+    assert_eq!(deferred.name(), "TypedNamedDeferredSpawnTest");
+    assert!(!deferred.actor().b_can_be_damaged().expect("read bCanBeDamaged"));
+}
+
+#[test]
 fn a_property_round_trips_through_the_typed_surface() {
     connect();
     let actor = spawn();

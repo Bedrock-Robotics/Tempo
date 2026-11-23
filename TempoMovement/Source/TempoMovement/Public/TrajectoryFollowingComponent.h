@@ -32,8 +32,9 @@ struct FTrajectoryEndEvent
 
 // Raised on each trajectory end (see FTrajectoryEndEvent). Declared here rather than on the
 // controller because this component is what a subscriber can find on a pawn: it is present from the
-// moment it is added, whereas the controller is not spawned until a spline has been configured, and
-// one binding here covers every trajectory the pawn is subsequently given.
+// moment it is added, whereas the controller is not spawned until a spline has been configured (or
+// EnsureController is called), and one binding here covers every trajectory the pawn is
+// subsequently given.
 DECLARE_MULTICAST_DELEGATE_OneParam(FTrajectoryEndSignature, const FTrajectoryEndEvent&);
 
 // Add to a pawn to have it follow an ASplineActor. On BeginPlay (and whenever reconfigured) it spawns
@@ -81,8 +82,9 @@ public:
 	// Spawn the controller now if there is none yet, without a trajectory to follow; it idles until
 	// one is given. For an owner that wants every actor it will ever use to exist, under a fixed
 	// name, from the start, rather than to appear at the first trajectory. The controller is named
-	// after the owner (<owner>_TrajectoryFollowingController). Returns null if it could not be
-	// spawned.
+	// after the pawn, <pawn>_TrajectoryFollowingController, and under no other name. Returns null if
+	// it could not be spawned: the owner is not a pawn, the world is not in play, or a live object
+	// holds that name.
 	UFUNCTION(BlueprintCallable, Category = "Trajectory")
 	ATrajectoryFollowingController* EnsureController();
 

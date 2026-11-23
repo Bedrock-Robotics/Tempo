@@ -58,12 +58,28 @@ public:
 	// this many steps of 1 / SimulatedStepsPerSecond (on the step grid, after the first step).
 	uint64 GetFixedStepsCount() const { return FixedStepsCount; }
 
-	// Moves sim time to SimTime, for a client that restores a saved state of the simulation: world time
-	// and, with it, Tempo's own clock (the fixed step count and the wall clock anchor), which would
-	// otherwise carry on from where it was. The next step then ends one step after SimTime. Part-way
-	// through a game frame, the frame keeps the steps it has run, and its actors tick over all of
-	// them. Returns false, having changed nothing, while a Step is in progress.
+	// Moves sim time to SimTime, forwards or backwards, for a host project that restores a saved state
+	// of the simulation: world time and, with it, Tempo's own clock (the fixed step count and the wall
+	// clock anchor), which would otherwise carry on from where it was. With SimTime on the step grid
+	// the next step ends one step after it; off the grid, the next step is the one that gets back on.
+	//
+	// Part-way through a game frame, the frame keeps the steps it has run and its actors tick over
+	// all of them. A state restored there has to have been saved as many steps into a game frame
+	// (GetStepsIntoGameFrame), which is for the caller to see to.
+	//
+	// Only the clock moves. Timers keep their phase, and a time that other code read from the clock
+	// before (a command watchdog, a sensor's last capture) stays as it is, for the caller to restore
+	// or reset where it matters.
+	//
+	// Call between steps, as a client's RPC is handled, not from an OnStep subscriber. Returns false,
+	// having changed nothing: while a Step is in progress; for a time that is not finite, is
+	// negative, or lies before the steps the current game frame has run; and on the settings of a
+	// streamed level.
 	bool SetSimTime(double SimTime);
+
+	// Whether SetSimTime(SimTime) would move the clock now, without moving it. For a caller that
+	// has changes of its own to make first and could not take them back.
+	bool CanSetSimTime(double SimTime) const;
 
 	// Whether a request to a GameFrameOnly RPC must wait: between frames, outside a world tick, or
 	// part-way through a game frame. FTempoServer asks before handling one.

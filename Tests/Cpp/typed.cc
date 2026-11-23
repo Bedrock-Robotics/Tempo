@@ -88,6 +88,14 @@ TEMPO_TEST(the_linked_classes_match_the_sim) {
 	REQUIRE_OK(world::check_schema());
 }
 
+TEMPO_TEST(an_actor_spawned_under_a_name_has_it) {
+	REQUIRE(tempo_test::connect());
+	auto actor = world::spawn_actor<StaticMeshActor>(std::nullopt, nullptr, "TypedNamedSpawnTest");
+	REQUIRE_OK(actor);
+	Spawned spawned(std::move(actor).value());
+	CHECK(spawned.actor.object().actor_name() == "TypedNamedSpawnTest");
+}
+
 TEMPO_TEST(a_property_round_trips_through_an_inherited_member) {
 	REQUIRE(tempo_test::connect());
 	auto spawned = spawn();

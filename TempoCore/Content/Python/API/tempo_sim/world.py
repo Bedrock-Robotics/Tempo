@@ -201,8 +201,8 @@ async def spawn_actor_async(cls: type[T], transform: Optional[Transform] = None,
     process must find the same actor again, to restore saved state onto it for example. The spawn
     fails if the name is taken or is not a valid object name.
     """
-    name = await _spawn(cls, False, transform, relative_to_actor, name)
-    return cls(name, class_path=cls.__tempo_class__)
+    spawned = await _spawn(cls, False, transform, relative_to_actor, name)
+    return cls(spawned, class_path=cls.__tempo_class__)
 
 
 spawn_actor = _blocking(spawn_actor_async)
@@ -224,14 +224,16 @@ def spawn_actor_deferred(cls: type[T], transform: Optional[Transform] = None,
 
         with world.spawn_actor_deferred(BP_Truck_C, transform=t) as truck:
             truck.MaxSpeed = 1200.0
+
+    `name` is as for spawn_actor.
     """
-    name = run_async(_spawn(cls, True, transform, relative_to_actor, name))
+    spawned = run_async(_spawn(cls, True, transform, relative_to_actor, name))
     try:
-        yield cls(name, class_path=cls.__tempo_class__)
+        yield cls(spawned, class_path=cls.__tempo_class__)
     finally:
         # Finish even if the block raised: a deferred actor left unfinished is in the world but
         # never initialized, which is worse than one configured only partway.
-        run_async(_finish_spawning(name))
+        run_async(_finish_spawning(spawned))
 
 
 @asynccontextmanager
@@ -244,12 +246,14 @@ async def spawn_actor_deferred_async(cls: type[T], transform: Optional[Transform
         async with world.spawn_actor_deferred_async(BP_Truck_C, transform=t) as truck:
             async with world.batch():
                 truck.MaxSpeed = 1200.0
+
+    `name` is as for spawn_actor.
     """
-    name = await _spawn(cls, True, transform, relative_to_actor, name)
+    spawned = await _spawn(cls, True, transform, relative_to_actor, name)
     try:
-        yield cls(name, class_path=cls.__tempo_class__)
+        yield cls(spawned, class_path=cls.__tempo_class__)
     finally:
-        await _finish_spawning(name)
+        await _finish_spawning(spawned)
 
 
 async def destroy_actor_async(actor: Object) -> None:

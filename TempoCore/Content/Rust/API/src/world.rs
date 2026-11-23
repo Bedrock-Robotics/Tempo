@@ -209,10 +209,7 @@ pub fn spawn_actor<T: Class>(
     transform: Option<Transform>,
     relative_to_actor: Option<&ObjectRef>,
 ) -> Result<T, TempoError> {
-    note_origin::<T>();
-    let request = spawn_request::<T>(false, None, transform, relative_to_actor)?;
-    let response = crate::tempo_world::spawn_actor(request)?;
-    Ok(T::from_object(ObjectRef::actor(response.name).with_class(T::PATH)))
+    spawn::<T>(None, transform, relative_to_actor)
 }
 
 /// Spawn one actor of a class, without blocking.
@@ -220,10 +217,7 @@ pub async fn spawn_actor_async<T: Class>(
     transform: Option<Transform>,
     relative_to_actor: Option<&ObjectRef>,
 ) -> Result<T, TempoError> {
-    note_origin::<T>();
-    let request = spawn_request::<T>(false, None, transform, relative_to_actor)?;
-    let response = crate::tempo_world::spawn_actor_async(request).await?;
-    Ok(T::from_object(ObjectRef::actor(response.name).with_class(T::PATH)))
+    spawn_async::<T>(None, transform, relative_to_actor).await
 }
 
 /// Spawn one actor of a class under a name of the caller's choosing.
@@ -236,10 +230,7 @@ pub fn spawn_actor_named<T: Class>(
     transform: Option<Transform>,
     relative_to_actor: Option<&ObjectRef>,
 ) -> Result<T, TempoError> {
-    note_origin::<T>();
-    let request = spawn_request::<T>(false, Some(name), transform, relative_to_actor)?;
-    let response = crate::tempo_world::spawn_actor(request)?;
-    Ok(T::from_object(ObjectRef::actor(response.name).with_class(T::PATH)))
+    spawn::<T>(Some(name), transform, relative_to_actor)
 }
 
 /// Spawn one actor of a class under a name of the caller's choosing, without blocking.
@@ -248,8 +239,27 @@ pub async fn spawn_actor_named_async<T: Class>(
     transform: Option<Transform>,
     relative_to_actor: Option<&ObjectRef>,
 ) -> Result<T, TempoError> {
+    spawn_async::<T>(Some(name), transform, relative_to_actor).await
+}
+
+fn spawn<T: Class>(
+    name: Option<&str>,
+    transform: Option<Transform>,
+    relative_to_actor: Option<&ObjectRef>,
+) -> Result<T, TempoError> {
     note_origin::<T>();
-    let request = spawn_request::<T>(false, Some(name), transform, relative_to_actor)?;
+    let request = spawn_request::<T>(false, name, transform, relative_to_actor)?;
+    let response = crate::tempo_world::spawn_actor(request)?;
+    Ok(T::from_object(ObjectRef::actor(response.name).with_class(T::PATH)))
+}
+
+async fn spawn_async<T: Class>(
+    name: Option<&str>,
+    transform: Option<Transform>,
+    relative_to_actor: Option<&ObjectRef>,
+) -> Result<T, TempoError> {
+    note_origin::<T>();
+    let request = spawn_request::<T>(false, name, transform, relative_to_actor)?;
     let response = crate::tempo_world::spawn_actor_async(request).await?;
     Ok(T::from_object(ObjectRef::actor(response.name).with_class(T::PATH)))
 }
@@ -306,8 +316,35 @@ where
     T: Class,
     F: FnOnce(&T) -> Result<(), TempoError>,
 {
+    spawn_deferred::<T, F>(None, transform, relative_to_actor, configure)
+}
+
+/// [`spawn_actor_deferred`], under a name of the caller's choosing: see [`spawn_actor_named`].
+pub fn spawn_actor_deferred_named<T, F>(
+    name: &str,
+    transform: Option<Transform>,
+    relative_to_actor: Option<&ObjectRef>,
+    configure: F,
+) -> Result<T, TempoError>
+where
+    T: Class,
+    F: FnOnce(&T) -> Result<(), TempoError>,
+{
+    spawn_deferred::<T, F>(Some(name), transform, relative_to_actor, configure)
+}
+
+fn spawn_deferred<T, F>(
+    name: Option<&str>,
+    transform: Option<Transform>,
+    relative_to_actor: Option<&ObjectRef>,
+    configure: F,
+) -> Result<T, TempoError>
+where
+    T: Class,
+    F: FnOnce(&T) -> Result<(), TempoError>,
+{
     note_origin::<T>();
-    let request = spawn_request::<T>(true, None, transform, relative_to_actor)?;
+    let request = spawn_request::<T>(true, name, transform, relative_to_actor)?;
     let response = crate::tempo_world::spawn_actor(request)?;
     let handle = T::from_object(ObjectRef::actor(&response.name).with_class(T::PATH));
 
@@ -374,8 +411,38 @@ where
     F: FnOnce(T) -> Fut,
     Fut: std::future::Future<Output = Result<(), TempoError>>,
 {
+    spawn_deferred_async::<T, F, Fut>(None, transform, relative_to_actor, configure).await
+}
+
+/// [`spawn_actor_deferred_async`], under a name of the caller's choosing: see
+/// [`spawn_actor_named`].
+pub async fn spawn_actor_deferred_named_async<T, F, Fut>(
+    name: &str,
+    transform: Option<Transform>,
+    relative_to_actor: Option<&ObjectRef>,
+    configure: F,
+) -> Result<T, TempoError>
+where
+    T: Class,
+    F: FnOnce(T) -> Fut,
+    Fut: std::future::Future<Output = Result<(), TempoError>>,
+{
+    spawn_deferred_async::<T, F, Fut>(Some(name), transform, relative_to_actor, configure).await
+}
+
+async fn spawn_deferred_async<T, F, Fut>(
+    name: Option<&str>,
+    transform: Option<Transform>,
+    relative_to_actor: Option<&ObjectRef>,
+    configure: F,
+) -> Result<T, TempoError>
+where
+    T: Class,
+    F: FnOnce(T) -> Fut,
+    Fut: std::future::Future<Output = Result<(), TempoError>>,
+{
     note_origin::<T>();
-    let request = spawn_request::<T>(true, None, transform, relative_to_actor)?;
+    let request = spawn_request::<T>(true, name, transform, relative_to_actor)?;
     let response = crate::tempo_world::spawn_actor_async(request).await?;
     let object = ObjectRef::actor(&response.name).with_class(T::PATH);
 
