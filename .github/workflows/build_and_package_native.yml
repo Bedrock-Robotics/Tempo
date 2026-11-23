@@ -209,6 +209,10 @@ jobs:
         if [ -n "$NEED_PYTHON" ]; then
           command -v uv >/dev/null || trouble "uv is not on the runner's PATH (it provides Python $NEED_PYTHON for the tests)."
         fi
+        # Run, not just found: a tool on the PATH can still fail to run for the runner's user.
+        for tool in git python3 jq ${NEED_PYTHON:+uv}; do
+          "$tool" --version > /dev/null 2>&1 || trouble "$tool does not run on this runner ($(command -v "$tool" || echo 'not on the PATH'))."
+        done
         CHANGELIST=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["Changelist"])' "$ENGINE/Engine/Build/Build.version")
         STAMP="engine=$ENGINE changelist=$CHANGELIST"
 
@@ -246,21 +250,71 @@ jobs:
           echo "CI_GOLDEN=$ROOT/golden"
           echo "CI_STAMP=$STAMP"
         } >> "$GITHUB_ENV"
+
+        # A Zen server per engine. Every engine's editor otherwise auto-launches the same one (one
+        # version-agnostic data dir, port 8558), and 5.7 and 5.8 launch it with different arguments, so an
+        # editor starting under one engine shuts down and relaunches the server the other engine's editor
+        # or cook is using: that cook loses its local DDC ("no writable nodes available"). Through
+        # UE-CmdLineArgs, which every Unreal process inserts into its command line, so it reaches the
+        # editors the scripts launch and UAT's cook without either knowing. Persistent, outside the build
+        # tree that every job resets, and per engine only: one runner per engine never runs two jobs at once.
+        ZEN_DATA="$TEMPO_CI_ROOT/zen/$UNREAL_VERSION"
+        mkdir -p "$ZEN_DATA" || trouble "Cannot create the Zen data directory $ZEN_DATA."
+        [ "$RUNNER_OS" = Windows ] && ZEN_DATA=$(cygpath -m "$ZEN_DATA")
+        echo "UE-CmdLineArgs=-ZenDataPath=\"$ZEN_DATA\" -ini:Engine:[Zen.AutoLaunch]:DesiredPort=$((8600 + ${UNREAL_VERSION//./}))" >> "$GITHUB_ENV"
+
+        # For Gather Test Reports, which collects the crash reports written after this.
+        touch "$RUNNER_TEMP/tempo-ci-job-start"
         echo "trouble=false" >> "$GITHUB_OUTPUT"
         echo "Machine OK: $STAMP; ${FREE_GB}GB free"
+
+    # Not every shell passes an environment variable whose name is no identifier on to its children.
+    # Checked from a non-shell child of the step's shell, as the scripts' Unreal processes are. Without it
+    # the engines share a Zen server again, as before, so this warns rather than failing the job.
+    - name: Check Zen Settings Reach Unreal
+      run: |
+        python3 -c 'import os, sys; sys.exit(0 if os.environ.get("UE-CmdLineArgs") else 1)' \
+          || echo "::warning title=Shared Zen server::UE-CmdLineArgs did not reach a child of this step's shell, so the engines' jobs share one Zen server and can restart it under each other."
 
     # Whatever an earlier job left running from this engine's build tree. A cancelled or timed-out job's sim
     # outlives it: pytest dies on SIGTERM without its fixture teardown, and TestCppAPI.sh gives the sim a
     # process group of its own. It keeps writing into the tree, so it cannot be deleted. Every job does this
     # again when it ends (the last step); here is for a job that ended without getting there.
+    # Matched against the engine's whole tree root, not the build tree with a trailing slash: a cancelled
+    # job's clone of the golden tree (`cp -cR .../golden .../build`) names neither with one, outlives the
+    # cancellation, and keeps filling the build tree while the next job deletes it ("Directory not empty").
     - name: Stop Leftover Processes
       run: &stop_leftover_processes |
-        [ -n "${CI_BUILD:-}" ] || exit 0
+        [ -n "${CI_TREE_ROOT:-}" ] || exit 0
+        if [ "$RUNNER_OS" = Windows ]; then
+          # Git Bash's ps sees only MSYS processes, and the editor, UBT and the packaged sim are native.
+          # Match every process's command line against the tree, in its Windows and Git Bash spellings,
+          # read through the environment so the path is in no matcher's own command line. Native
+          # processes have no SIGTERM to honor, so stop them outright, children too.
+          export CI_TREE_ROOT_WIN=$(cygpath -m "$CI_TREE_ROOT")
+          tree_pids() {
+            powershell.exe -NoProfile -NonInteractive -Command '
+              $paths = @($env:CI_TREE_ROOT_WIN, $env:CI_TREE_ROOT) | ForEach-Object { $_.ToLower() + "/" }
+              Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine } |
+                Where-Object { $c = $_.CommandLine.ToLower().Replace("\", "/"); $paths | Where-Object { $c.Contains($_) } } |
+                ForEach-Object { $_.ProcessId }' | tr -d '\r'
+          }
+          PIDS=$(tree_pids)
+          [ -n "$PIDS" ] || exit 0
+          echo "::warning title=Leftover processes::Stopping processes still running from $CI_TREE_ROOT."
+          for pid in $PIDS; do tasklist.exe //FI "PID eq $pid" //NH //FO CSV 2>/dev/null; done
+          for pid in $PIDS; do taskkill.exe //F //T //PID "$pid" > /dev/null 2>&1 || true; done
+          sleep 3
+          # One that survives is stuck in its own termination, in the kernel (a thread blocked in a driver),
+          # and keeps its files in the tree open: nothing short of a reboot frees it.
+          [ -z "$(tree_pids)" ] || { echo "::error::Processes in $CI_TREE_ROOT survived taskkill /F; the machine needs a reboot."; exit 1; }
+          exit 0
+        fi
         # Matched in awk through ENVIRON, so the path is in no matcher's own command line.
-        tree_pids() { ps -axo pid=,command= | awk 'index($0, ENVIRON["CI_BUILD"] "/") { print $1 }'; }
+        tree_pids() { ps -axo pid=,command= | awk 'index($0, ENVIRON["CI_TREE_ROOT"] "/") { print $1 }'; }
         PIDS=$(tree_pids)
         [ -n "$PIDS" ] || exit 0
-        echo "::warning title=Leftover processes::Stopping processes still running from $CI_BUILD."
+        echo "::warning title=Leftover processes::Stopping processes still running from $CI_TREE_ROOT."
         ps -o pid=,etime=,command= -p "$(echo $PIDS | tr ' ' ',')" || true
         kill -TERM $PIDS 2>/dev/null || true
         for _ in $(seq 1 15); do
@@ -269,17 +323,25 @@ jobs:
         done
         kill -KILL $(tree_pids) 2>/dev/null || true
         sleep 2
-        [ -z "$(tree_pids)" ] || { echo "::error::Processes in $CI_BUILD survived SIGKILL."; exit 1; }
+        [ -z "$(tree_pids)" ] || { echo "::error::Processes in $CI_TREE_ROOT survived SIGKILL."; exit 1; }
 
     - name: Prepare Build Tree
       env:
         CLEAN: ${{ inputs.clean }}
       run: |
         # Copy-on-write where the filesystem allows it: instant, and no extra disk until files change.
+        # Windows: robocopy, multithreaded (3-4x Git Bash's cp -a on a build tree's many small files), with
+        # timestamps, which UBT's incremental build goes by. MSYS must not rewrite its /switches as paths;
+        # exit codes below 8 are success.
         clone_tree() {
           case "$RUNNER_OS" in
             macOS) cp -cR "$1" "$2" ;;
             Linux) cp -a --reflink=auto "$1" "$2" ;;
+            Windows)
+              local rc=0
+              MSYS2_ARG_CONV_EXCL='*' robocopy "$(cygpath -w "$1")" "$(cygpath -w "$2")" \
+                /E /COPY:DAT /DCOPY:DAT /SL /MT:16 /R:2 /W:5 /NFL /NDL /NP /NJH || rc=$?
+              [ "$rc" -lt 8 ] ;;
             *)     cp -a "$1" "$2" ;;
           esac
         }
@@ -406,7 +468,15 @@ jobs:
         TEMPO_GEN_RUST_API: ${{ inputs.gen_rust_api && '1' || '0' }}
         TEMPO_GEN_CPP_API: ${{ inputs.gen_cpp_api && '1' || '0' }}
       run: |
-        "$CI_BUILD/$TEMPO_ROOT/Scripts/Build.sh"
+        LOG_ARGS=()
+        if [ "$RUNNER_OS" = Windows ]; then
+          # Both engines' builds run at once as the same user, and with an installed engine UBT logs to that
+          # user's %LOCALAPPDATA%\UnrealBuildTool\Log.txt. Windows will not let the second build rotate a log
+          # the first has open (macOS and Linux will), so each engine logs in its own tree root.
+          mkdir -p "$CI_TREE_ROOT/logs"
+          LOG_ARGS=(-Log="$(cygpath -m "$CI_TREE_ROOT/logs/UnrealBuildTool.log")")
+        fi
+        "$CI_BUILD/$TEMPO_ROOT/Scripts/Build.sh" "${LOG_ARGS[@]}"
 
     - name: Run Automation Tests
       if: ${{ inputs.automation_test_filter != '' }}
@@ -473,14 +543,52 @@ jobs:
           exit 1
         fi
 
+    # Into one directory, so the upload has one path. Given two on different trees, upload-artifact
+    # takes their common ancestor as its root, and on Windows that is the bare drive ("C:"), which
+    # it then resolves against the workspace and refuses every file.
+    - name: Gather Test Reports
+      if: always()
+      env:
+        PROJECT_ROOT: ${{ inputs.project_root }}
+      run: |
+        # macOS's reports of this job's crashes: the packaged sim's (named for the project) and the
+        # editor's. Small text files; the exit-time crashes add one per test group.
+        if [ "$RUNNER_OS" = macOS ] && [ -f "$RUNNER_TEMP/tempo-ci-job-start" ]; then
+          CRASHES="$RUNNER_TEMP/test-reports/crash-reports"
+          find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 1 -type f -newer "$RUNNER_TEMP/tempo-ci-job-start" \
+            \( -name "$(basename "$PROJECT_ROOT")-*" -o -name 'UnrealEditor*' \) 2>/dev/null |
+            while IFS= read -r f; do mkdir -p "$CRASHES"; cp "$f" "$CRASHES/"; done || true
+          [ -d "$CRASHES" ] && echo "Collected $(ls "$CRASHES" | wc -l | tr -d ' ') crash report(s)."
+          # Unreal's failed checks and fatal errors from macOS's unified log. A check that fails before
+          # Unreal's logging starts reaches nowhere else, and macOS writes no crash report for it: UE
+          # 5.8's intermittent startup LLM check (FLLMThreadState::PopTag) left only this, which the
+          # test harnesses now relaunch past, so a recovered job's warning points here.
+          SINCE=$(stat -f '%Sm' -t '%Y-%m-%d %H:%M:%S' "$RUNNER_TEMP/tempo-ci-job-start")
+          UNIFIED="$RUNNER_TEMP/unreal-unified-log.txt"
+          if /usr/bin/log show --start "$SINCE" --style compact --predicate \
+              "(process == \"$(basename "$PROJECT_ROOT")\" OR process BEGINSWITH \"UnrealEditor\") AND
+               (eventMessage CONTAINS \"check failed\" OR eventMessage CONTAINS \"Assertion failed\" OR
+                eventMessage CONTAINS \"Fatal error\")" > "$UNIFIED" 2>&1; then
+            # The first line is the column header.
+            if [ "$(wc -l < "$UNIFIED")" -gt 1 ]; then
+              mkdir -p "$CRASHES"; cp "$UNIFIED" "$CRASHES/unified-log.txt"
+              echo "Unreal assertions in the unified log:"; tail -n +2 "$UNIFIED"
+            fi
+          else
+            echo "::notice title=Unified log unread::$(head -1 "$UNIFIED")"
+          fi
+        fi
+        REPORT="${CI_BUILD:-}/$PROJECT_ROOT/Saved/TempoTestReport"
+        [ -n "${CI_BUILD:-}" ] && [ -d "$REPORT" ] || exit 0
+        mkdir -p "$RUNNER_TEMP/test-reports/automation"
+        cp -R "$REPORT/." "$RUNNER_TEMP/test-reports/automation/"
+
     - name: Upload Test Reports
       if: always()
       uses: actions/upload-artifact@v7
       with:
         name: ${{ format('native-test-reports-{0}-{1}', runner.os, inputs.unreal_version) }}
-        path: |
-          ${{ runner.temp }}/test-reports
-          ${{ env.CI_BUILD }}/${{ inputs.project_root }}/Saved/TempoTestReport
+        path: ${{ runner.temp }}/test-reports
         if-no-files-found: warn
 
     # Only cache_branch builds that got all the way through packaging update the golden tree, so it
@@ -489,14 +597,22 @@ jobs:
     - name: Update Golden Tree
       if: ${{ github.event_name != 'pull_request_target' && github.ref == format('refs/heads/{0}', inputs.cache_branch) && steps.package.outcome == 'success' }}
       run: |
-        case "$RUNNER_OS" in
-          macOS) CLONE=(cp -cR) ;;
-          Linux) CLONE=(cp -a --reflink=auto) ;;
-          *)     CLONE=(cp -a) ;;
-        esac
+        # The same clone as Prepare Build Tree's clone_tree (see there for Windows' robocopy).
+        clone_tree() {
+          case "$RUNNER_OS" in
+            macOS) cp -cR "$1" "$2" ;;
+            Linux) cp -a --reflink=auto "$1" "$2" ;;
+            Windows)
+              local rc=0
+              MSYS2_ARG_CONV_EXCL='*' robocopy "$(cygpath -w "$1")" "$(cygpath -w "$2")" \
+                /E /COPY:DAT /DCOPY:DAT /SL /MT:16 /R:2 /W:5 /NFL /NDL /NP /NJH || rc=$?
+              [ "$rc" -lt 8 ] ;;
+            *)     cp -a "$1" "$2" ;;
+          esac
+        }
         : "${CI_BUILD:?}" "${CI_GOLDEN:?}"   # never rm -rf an empty path
         rm -rf "$CI_GOLDEN.new" "$CI_GOLDEN.old"
-        "${CLONE[@]}" "$CI_BUILD" "$CI_GOLDEN.new"
+        clone_tree "$CI_BUILD" "$CI_GOLDEN.new"
         [ -d "$CI_GOLDEN" ] && mv "$CI_GOLDEN" "$CI_GOLDEN.old"
         mv "$CI_GOLDEN.new" "$CI_GOLDEN"
         rm -rf "$CI_GOLDEN.old"

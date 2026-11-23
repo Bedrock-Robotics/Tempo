@@ -105,9 +105,30 @@ SIM_PID=""
 # The sim is launched under job control (set -m), which makes it the leader of a process group of
 # its own, so this signals the group: what a package calls its binary is a launcher script on
 # Linux, and signalling the launcher alone stops the script and orphans the game, which keeps the
-# port. Terminated first, killed if the group is still there after a grace period.
+# port. Asked to quit over gRPC first, as the Python harness does, because on Windows a signal is
+# TerminateProcess, and a sim terminated mid-load once stayed stuck in its termination, holding the
+# build tree until a reboot (examples/quit.rs). Then terminated, and killed if the group is still
+# there after a grace period.
+sim_alive() { kill -0 -- -"$SIM_PID" 2>/dev/null || kill -0 "$SIM_PID" 2>/dev/null; }
 cleanup() {
   [ -n "$SIM_PID" ] || return 0
+  if sim_alive; then
+    # In the background, so a wedged sim that never answers can't hold the teardown. The tests
+    # built everything the example needs, so building it is a link.
+    TEMPO_SERVER_PORT="$PORT" TEMPO_SERVER_SOCKET="$SOCKET" \
+      cargo run --quiet --manifest-path "$CRATE_DIR/Cargo.toml" --example quit > /dev/null 2>&1 &
+    QUIT_PID=$!
+    QUIT_SENT=""
+    for _ in $(seq 1 60); do
+      sim_alive || break
+      if [ -z "$QUIT_SENT" ] && ! kill -0 "$QUIT_PID" 2>/dev/null; then
+        wait "$QUIT_PID" || break  # the request failed, so no exit is coming
+        QUIT_SENT=1
+      fi
+      sleep 1
+    done
+    kill "$QUIT_PID" 2>/dev/null || true
+  fi
   kill -TERM -- -"$SIM_PID" 2>/dev/null || kill -TERM "$SIM_PID" 2>/dev/null || true
   for _ in $(seq 1 30); do
     kill -0 -- -"$SIM_PID" 2>/dev/null || break
@@ -135,26 +156,43 @@ if [ "$GROUP" != "contract" ]; then
     ENDPOINT_ARG=(-ServerPort="$PORT")
     echo "Launching sim: $BINARY $RHI_ARG (port $PORT)"
   fi
-  # Under job control, so the sim leads a process group cleanup can signal as a whole.
-  set -m
-  "$BINARY" "$RHI_ARG" -unattended -nopause -nosound -nosplash \
-    "${ENDPOINT_ARG[@]}" -stdout -fullstdoutlogoutput > "$REPORT_DIR/sim.log" 2>&1 &
-  SIM_PID=$!
-  set +m
+  # A sim killed by a signal within 30s of launch, before its endpoint appears, is launched once more:
+  # UE 5.8's packaged Mac build intermittently fails an LLM check (FLLMThreadState::PopTag, "stack was
+  # empty on pop") about a second and a half after exec, before its logging starts, and a relaunch
+  # starts cleanly. Bash reports a signal as 128+N. The crashed attempt's log is kept beside sim.log.
+  for ATTEMPT in 1 2; do
+    LAUNCHED=$SECONDS
+    # Under job control, so the sim leads a process group cleanup can signal as a whole.
+    set -m
+    "$BINARY" "$RHI_ARG" -unattended -nopause -nosound -nosplash \
+      "${ENDPOINT_ARG[@]}" -stdout -fullstdoutlogoutput > "$REPORT_DIR/sim.log" 2>&1 &
+    SIM_PID=$!
+    set +m
 
-  # Wait for the endpoint to show up (the tests then retry the gRPC handshake). A socket has no
-  # /dev/tcp equivalent, so wait for the server to create the file.
-  echo "Waiting for sim gRPC endpoint ${SOCKET:-port $PORT} ..."
-  for _ in $(seq 1 "${TEMPO_SIM_STARTUP_TIMEOUT_S:-300}"); do
-    if ! kill -0 "$SIM_PID" 2>/dev/null; then
-      echo "FAILED: sim exited early. Log tail:" 1>&2; tail -n 40 "$REPORT_DIR/sim.log" 1>&2; exit 1
+    # Wait for the endpoint to show up (the tests then retry the gRPC handshake). A socket has no
+    # /dev/tcp equivalent, so wait for the server to create the file.
+    echo "Waiting for sim gRPC endpoint ${SOCKET:-port $PORT} ..."
+    SIM_RC=""
+    for _ in $(seq 1 "${TEMPO_SIM_STARTUP_TIMEOUT_S:-300}"); do
+      if ! kill -0 "$SIM_PID" 2>/dev/null; then
+        SIM_RC=0; wait "$SIM_PID" || SIM_RC=$?
+        break
+      fi
+      if [ -n "$SOCKET" ]; then
+        if [ -S "$SOCKET" ]; then break; fi
+      elif (exec 3<>"/dev/tcp/127.0.0.1/$PORT") 2>/dev/null; then
+        exec 3>&- 3<&-; break
+      fi
+      sleep 1
+    done
+    [ -n "$SIM_RC" ] || break
+    LIVED=$((SECONDS - LAUNCHED))
+    if [ "$ATTEMPT" = 1 ] && [ "$SIM_RC" -gt 128 ] && [ "$SIM_RC" -lt 192 ] && [ "$LIVED" -lt 30 ]; then
+      mv "$REPORT_DIR/sim.log" "$REPORT_DIR/sim-crashed-at-startup.log"
+      echo "::warning title=Sim relaunched::The sim died at startup (exit code $SIM_RC, after ${LIVED}s), so it was launched again. Its log: $REPORT_DIR/sim-crashed-at-startup.log"
+      continue
     fi
-    if [ -n "$SOCKET" ]; then
-      if [ -S "$SOCKET" ]; then break; fi
-    elif (exec 3<>"/dev/tcp/127.0.0.1/$PORT") 2>/dev/null; then
-      exec 3>&- 3<&-; break
-    fi
-    sleep 1
+    echo "FAILED: sim exited early (exit code $SIM_RC). Log tail:" 1>&2; tail -n 40 "$REPORT_DIR/sim.log" 1>&2; exit 1
   done
 fi
 

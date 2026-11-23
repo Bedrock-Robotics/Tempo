@@ -247,11 +247,12 @@ the `reference_build_scripts` memory.
 - **TempoROS is not vendored**, so nothing may assume a path for it. `Scripts/FindTempoROS.sh`
   (+ `.bat`) prints the plugin's directory or exits 1; `Setup.sh` and `SyncDeps.sh` go through it.
   `SyncDeps.sh` chains to TempoROS's own `SyncDeps.sh`, which is what lets CI sync everything with
-  one call. **`Package.sh` needs no TempoROS knowledge at all**: the `TempoROSCopyHandler` stage
-  copy handler lives at `TempoROS/Build/TempoROS.Automation.csproj`, and UBT's rules scan recurses
-  into `Source/` and `Build/` of any plugin directory (`Rules.cs`), so AutomationTool discovers and
-  builds it unaided — resolving the engine from the `EngineDir` MSBuild property UAT passes
-  (`EpicGames.MsBuild/CsProjBuilder.cs`), with no `UNREAL_ENGINE_PATH` needed.
+  one call. **`Package.sh` needs no TempoROS knowledge at all**, and neither does any other way of
+  packaging. TempoROS has no stage copy handler or other AutomationTool script module. A plugin's
+  automation project is only built when UAT gets `-ScriptsForProject`/`-ScriptDir`, never for
+  `-project=` alone, so one could never load unaided. Instead its `rclcpp.Build.cs` stages one name
+  per versioned library (the install name/SONAME), so staging's dereferenced copies don't
+  duplicate anything.
 - **`Build.sh`** → UBT `<Project>Editor`. **`Run.sh`** → opens the editor. **`Package.sh`** →
   `RunUAT BuildCookRun` to `Packaged/`. **`Clean.sh`** wipes artifacts.
 - **Engine path**: UE 5.7 lives at `/Users/Shared/Epic Games/UE_5.7` (path has a space —
@@ -442,6 +443,11 @@ sim (not the editor). They cover the client-facing API contract and behavior ove
   [group]`.
 - **Sim lifecycle:** Python's session-scoped `sim_server` fixture (and `TestRustAPI.sh` for Rust)
   launches the packaged binary headless, polls until the gRPC server answers, and tears it down.
+  A sim killed by a signal within 30 s of launch, before it answers, is relaunched once, with a
+  `Sim relaunched` warning and the crashed attempt's log kept as `sim-crashed-at-startup.log`: UE
+  5.8's packaged Mac build intermittently fails an LLM check (`FLLMThreadState::PopTag`) at
+  startup, before its logging starts, so only macOS's unified log records it (Gather Test Reports
+  copies Unreal's assertions from it).
   RHI is `-nullrhi` by default; `TEMPO_SIM_RENDER=1` renders off-screen (the `sensors` group, which
   also wants a GPU). The sim's full log is written to `TEMPO_TEST_REPORT_DIR/sim.log` (uploaded as a
   CI artifact) for post-mortem. `contract` groups never launch a sim. Python's `fixed_step` fixture

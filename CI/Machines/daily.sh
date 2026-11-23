@@ -20,6 +20,7 @@ cleanup() {
   done
   # The packaged sim's exit-time crashes leave a report per test group per job.
   find "$HOME/Library/Logs/DiagnosticReports" -type f -mtime +14 -delete 2>/dev/null
+  find "$HOME/AppData/Local/CrashDumps" -type f -mtime +14 -delete 2>/dev/null
   if runners_idle; then
     for runner in "$HOME"/actions-runner*/; do
       [ -d "$runner/_work/_temp" ] && find "$runner/_work/_temp" -mindepth 1 -maxdepth 1 -mtime +1 -exec rm -rf {} + 2>/dev/null
@@ -44,11 +45,24 @@ check() {
     min=${TEMPO_CI_MIN_FREE_GB:-100}
     # Warn at 1.5x the minimum, before jobs start failing on it.
     [ "$free" -ge $(( min * 3 / 2 )) ] || problem "only ${free}GB free under $TEMPO_CI_ROOT (jobs fail below ${min}GB)"
+    # Linux: TEMPO_CI_ROOT can be an XFS image on a loop device (linux/bootstrap.sh), for reflinks on a
+    # machine whose disk has none. The image is sparse, so the disk under it fills before the image does.
+    local back
+    back=$(losetup -nO BACK-FILE "$(findmnt -no SOURCE --target "$TEMPO_CI_ROOT" 2>/dev/null)" 2>/dev/null | sed 's/ *$//')
+    if [ -n "$back" ]; then
+      free=$(df -Pk "$back" | awk 'NR==2 {print int($4/1048576)}')
+      [ "$free" -ge $(( min * 3 / 2 )) ] || problem "only ${free}GB free on the disk under $back, the image behind $TEMPO_CI_ROOT"
+    fi
   else
     problem "TEMPO_CI_ROOT is not set in $TEMPO_CI_MACHINE_ENV"
   fi
-  for cmd in git python3 uv cargo cmake curl; do
-    command -v "$cmd" > /dev/null || problem "$cmd is not on the PATH"
+  # Run, not just found: on Windows a tool can be on the PATH and still not run for the CI user.
+  for cmd in git python3 uv cargo cmake curl jq; do
+    if ! command -v "$cmd" > /dev/null; then
+      problem "$cmd is not on the PATH"
+    elif ! "$cmd" --version > /dev/null 2>&1; then
+      problem "$cmd is on the PATH ($(command -v "$cmd")) but does not run"
+    fi
   done
   for var in $(compgen -v | grep '^TEMPO_CI_UE_[0-9]*_[0-9]*_ENGINE$'); do
     engine=${!var}
@@ -69,6 +83,14 @@ check() {
   local runners
   runners=$(runner_problems)
   [ -z "$runners" ] || problem "runner service down: $runners"
+  # Windows' weekly update runs as SYSTEM, which cannot post as the CI user, so it leaves its result
+  # where the CI user can read it but not write it (windows/update.ps1).
+  if [ "$TEMPO_CI_OS" = Windows ] && [ -f /c/ProgramData/TempoCI/update-status ]; then
+    case "$(head -1 /c/ProgramData/TempoCI/update-status)" in
+      ok*) ;;
+      *) problem "weekly update: $(head -1 /c/ProgramData/TempoCI/update-status) (see C:\\ProgramData\\TempoCI\\update.log)" ;;
+    esac
+  fi
 }
 
 # ---- Updates (macOS) -------------------------------------------------------------------------------
@@ -81,6 +103,14 @@ report_once() {   # report_once KEY TEXT
 }
 
 check_updates() {
+  if [ "$TEMPO_CI_OS" = Windows ]; then
+    check_windows_updates
+    return 0
+  fi
+  if [ "$TEMPO_CI_OS" = Linux ]; then
+    check_linux_updates
+    return 0
+  fi
   [ "$(uname -s)" = Darwin ] || return 0
   local label latest installed x
   softwareupdate -l 2>/dev/null | sed -n 's/^\* Label: //p' | while read -r label; do
@@ -92,6 +122,36 @@ check_updates() {
   installed=$(for x in /Applications/Xcode*.app; do defaults read "$x/Contents/Info" CFBundleShortVersionString 2>/dev/null; done)
   echo "$installed" | grep -qxF "$latest" && return 0
   report_once "xcode:$latest" "Xcode $latest is available (installed: $(echo "$installed" | paste -sd ' ' -)). $(engine_xcode_ranges)"
+}
+
+# Windows Update is set to download and wait (windows/bootstrap.ps1), as macOS is: an update changes what
+# every build runs on, so a human installs it when no job is running. Each pending one is reported once.
+check_windows_updates() {
+  local title
+  powershell.exe -NoProfile -NonInteractive -Command '
+    try {
+      $s = (New-Object -ComObject Microsoft.Update.Session).CreateUpdateSearcher()
+      $s.Search("IsInstalled=0 and IsHidden=0 and Type=''Software''").Updates | ForEach-Object { $_.Title }
+    } catch { }' 2>/dev/null | tr -d '\r' | while IFS= read -r title; do
+    [ -n "$title" ] || continue
+    report_once "windows:$title" "Windows update pending: $title. Install it when no job is running (Settings > Windows Update), restart, then check the next CI run."
+  done
+}
+
+# Ubuntu installs security updates on its own (unattended-upgrades; linux/bootstrap.sh keeps needrestart
+# from restarting the runners for them) and leaves everything else, and every reboot, to a human. Reported
+# once per set of pending packages, not once per package: a plain apt upgrade brings dozens at a time.
+check_linux_updates() {
+  local pending key
+  pending=$(apt list --upgradable 2>/dev/null | sed -n 's|^\([^/]*\)/.*|\1|p' | sort)
+  if [ -n "$pending" ]; then
+    key="apt:$(printf '%s' "$pending" | cksum | awk '{print $1}')"
+    report_once "$key" "$(echo "$pending" | wc -l | tr -d ' ') package update(s) pending: $(echo "$pending" | head -15 | paste -sd ' ' -)$([ "$(echo "$pending" | wc -l)" -gt 15 ] && echo ' ...'). Install them when no job is running (sudo apt upgrade), then check the next CI run."
+  fi
+  if [ -f /var/run/reboot-required ]; then
+    key="reboot:$(cat /var/run/reboot-required.pkgs 2>/dev/null | sort | cksum | awk '{print $1}')"
+    report_once "$key" "a reboot is pending (for $(sort -u /var/run/reboot-required.pkgs 2>/dev/null | paste -sd ' ' -)). Reboot when no job is running: the runners come back at boot."
+  fi
 }
 
 engine_xcode_ranges() {
