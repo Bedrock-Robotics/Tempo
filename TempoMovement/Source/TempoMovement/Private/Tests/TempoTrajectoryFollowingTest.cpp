@@ -662,39 +662,45 @@ bool FTempoTrajectoryBodySpeedTest::RunTest(const FString& Parameters)
 }
 
 //
-// The component's controller: there before any trajectory when asked for, and under a name that
-// follows from the pawn's rather than one the engine makes up.
+// The component's controller: one that already possesses the pawn is the one the component uses,
+// which is how a pawn gets a controller under a name of the caller's choosing.
 //
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTempoTrajectoryEnsureControllerTest,
-	"Tempo.Movement.TrajectoryFollowing.EnsureController", TempoTrajectoryTestFlags)
-bool FTempoTrajectoryEnsureControllerTest::RunTest(const FString& Parameters)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTempoTrajectoryExistingControllerTest,
+	"Tempo.Movement.TrajectoryFollowing.ExistingController", TempoTrajectoryTestFlags)
+bool FTempoTrajectoryExistingControllerTest::RunTest(const FString& Parameters)
 {
 	FTrajectoryTestFixture Fixture;
 
-	ATrajectoryFollowingController* Controller = Fixture.Component->EnsureController();
-	if (!Controller)
+	Fixture.Controller->Possess(Fixture.Pawn);
+	Fixture.Component->ConfigureAndFollow(Fixture.SplineActor, FTrajectoryTestFixture::ConstantSpeedConfig(100.0));
+
+	// A controller the component spawned would have taken the pawn over.
+	if (Fixture.Pawn->GetController() != Fixture.Controller)
 	{
-		AddError(TEXT("EnsureController should spawn a controller"));
+		AddError(TEXT("The component should use the controller that already possesses the pawn"));
 		return true;
 	}
 
-	const FString ExpectedName = FString::Printf(TEXT("%s_TrajectoryFollowingController"), *Fixture.Pawn->GetName());
-	if (Controller->GetName() != ExpectedName)
+	// The controller that was there got the trajectory: 100 cm/s for 1 s.
+	Fixture.Tick(10);
+	if (!FMath::IsNearlyEqual(Fixture.PawnX(), 100.0, DistanceTol))
 	{
-		AddError(FString::Printf(TEXT("The controller should be named '%s', got '%s'"), *ExpectedName, *Controller->GetName()));
-	}
-	if (Controller->GetPawn() != nullptr)
-	{
-		AddError(TEXT("A controller that has no trajectory yet should not possess the pawn"));
-	}
-	if (Fixture.Component->EnsureController() != Controller)
-	{
-		AddError(TEXT("A second EnsureController should return the controller the first one spawned"));
+		AddError(FString::Printf(TEXT("The existing controller should drive the pawn along the spline: expected x near 100, got %f"), Fixture.PawnX()));
 	}
 
-	// Progress along the trajectory is reflected, so that a save of a simulation's reflected state
-	// carries where on its trajectory a pawn is.
+	return true;
+}
+
+//
+// Progress along a trajectory is reflected, so that a save of a simulation's reflected state carries
+// where on its trajectory a pawn is.
+//
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTempoTrajectoryProgressReflectedTest,
+	"Tempo.Movement.TrajectoryFollowing.ProgressReflected", TempoTrajectoryTestFlags)
+bool FTempoTrajectoryProgressReflectedTest::RunTest(const FString& Parameters)
+{
 	for (const TCHAR* PropertyName : { TEXT("ElapsedSeconds"), TEXT("DistanceAlongSpline"), TEXT("bReachedTrajectoryEnd"), TEXT("bReversingLeg") })
 	{
 		if (!ATrajectoryFollowingController::StaticClass()->FindPropertyByName(PropertyName))

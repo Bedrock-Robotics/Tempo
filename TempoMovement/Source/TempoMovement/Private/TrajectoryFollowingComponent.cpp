@@ -63,59 +63,29 @@ void UTrajectoryFollowingComponent::StartFollowing()
 		return;
 	}
 
-	if (EnsureController())
-	{
-		Controller->FollowTrajectory(Spline, OwnerPawn, Config);
-	}
-}
-
-ATrajectoryFollowingController* UTrajectoryFollowingComponent::EnsureController()
-{
-	if (IsValid(Controller))
-	{
-		return Controller;
-	}
-
-	// A controller drives a pawn, in a world that is in play.
-	UWorld* World = GetWorld();
-	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
-	if (!World || !World->IsGameWorld() || !OwnerPawn)
-	{
-		return nullptr;
-	}
-
 	if (!ControllerClass)
 	{
 		ControllerClass = ATrajectoryFollowingController::StaticClass();
 	}
 
-	// A name that follows from the pawn's. A name the engine makes up differs from one process to
-	// the next, so nothing that has to find this controller again in another process (a saved
-	// simulation state, a log) could.
-	const FString ControllerName = FString::Printf(TEXT("%s_TrajectoryFollowingController"), *OwnerPawn->GetName());
-	if (ControllerName.Len() >= NAME_SIZE)
-	{
-		UE_LOG(LogTempoMovement, Error, TEXT("The name of pawn '%s' is too long to name its trajectory following controller after it"), *OwnerPawn->GetName());
-		return nullptr;
-	}
-
-	// Don't set the pawn as the controller's owner: once the controller possesses the pawn,
-	// PossessedBy() makes the pawn owned by the controller, which would form an owner loop.
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.Name = FName(*ControllerName);
-	// That name and no other: with a name the engine altered to make it unique the controller would
-	// be there, and not be found.
-	SpawnParameters.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Required_ReturnNull;
-	Controller = World->SpawnActor<ATrajectoryFollowingController>(ControllerClass, FTransform::Identity, SpawnParameters);
 	if (!Controller)
 	{
-		UE_LOG(LogTempoMovement, Error, TEXT("Could not spawn trajectory following controller '%s'. Is the name taken?"), *ControllerName);
-		return nullptr;
+		// A trajectory following controller that already has the pawn is the one to use. Whoever
+		// spawned it chose its name, which is how a pawn gets a controller under a fixed name.
+		Controller = Cast<ATrajectoryFollowingController>(OwnerPawn->GetController());
 	}
-#if WITH_EDITOR
-	Controller->SetActorLabel(Controller->GetName(), /*bMarkDirty=*/false);
-#endif
-	return Controller;
+
+	if (!Controller)
+	{
+		// Don't set the pawn as the controller's owner: once the controller possesses the pawn,
+		// PossessedBy() makes the pawn owned by the controller, which would form an owner loop.
+		Controller = GetWorld()->SpawnActor<ATrajectoryFollowingController>(ControllerClass);
+	}
+
+	if (Controller)
+	{
+		Controller->FollowTrajectory(Spline, OwnerPawn, Config);
+	}
 }
 
 void UTrajectoryFollowingComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)

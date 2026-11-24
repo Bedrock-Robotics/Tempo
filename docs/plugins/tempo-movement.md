@@ -102,11 +102,10 @@ To make a pawn follow one, add a **`TrajectoryFollowingComponent`** to the pawn 
 `Spline` at a placed `SplineActor`. On `BeginPlay` the component spawns a
 `TrajectoryFollowingController` that possesses the pawn and drives it.
 
-The controller is named after the pawn, `<pawn name>_TrajectoryFollowingController`, so it has the
-same name in every process that gives the pawn the same name. A component with no spline yet
-spawns its controller when it first gets one. Call `EnsureController()` on the component to spawn
-it at once instead, where every actor has to exist from the start, as when the simulation's state
-is saved and restored by actor name.
+If a `TrajectoryFollowingController` already possesses the pawn, the component uses that one
+instead of spawning its own. Spawn and possess the controller yourself where it has to exist from
+the start under a name you choose, as when the simulation's state is saved and restored by actor
+name; a controller the component spawns gets an auto-generated name.
 
 Because the spline is *referenced* rather than owned, several pawns can each carry their own
 component pointing at the same `SplineActor`, each with its own `Config` — so two pawns can share

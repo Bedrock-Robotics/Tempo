@@ -32,9 +32,8 @@ struct FTrajectoryEndEvent
 
 // Raised on each trajectory end (see FTrajectoryEndEvent). Declared here rather than on the
 // controller because this component is what a subscriber can find on a pawn: it is present from the
-// moment it is added, whereas the controller is not spawned until a spline has been configured (or
-// EnsureController is called), and one binding here covers every trajectory the pawn is
-// subsequently given.
+// moment it is added, whereas the controller is not spawned until a spline has been configured, and
+// one binding here covers every trajectory the pawn is subsequently given.
 DECLARE_MULTICAST_DELEGATE_OneParam(FTrajectoryEndSignature, const FTrajectoryEndEvent&);
 
 // Add to a pawn to have it follow an ASplineActor. On BeginPlay (and whenever reconfigured) it spawns
@@ -42,6 +41,11 @@ DECLARE_MULTICAST_DELEGATE_OneParam(FTrajectoryEndSignature, const FTrajectoryEn
 // controller possess and drive the pawn. Because the spline is referenced (not owned), several pawns
 // can each carry one of these components pointing at the same spline while traversing it with their
 // own Config (e.g. different speed models or end behavior).
+//
+// A pawn that a ATrajectoryFollowingController already possesses keeps that controller: the component
+// uses it instead of spawning one, and from then on treats it as its own (it is destroyed with the
+// component). Spawn and possess the controller yourself to choose its name; one the component spawns
+// gets an auto-generated name.
 UCLASS(ClassGroup = (Tempo), meta = (BlueprintSpawnableComponent))
 class TEMPOMOVEMENT_API UTrajectoryFollowingComponent : public UActorComponent
 {
@@ -79,15 +83,6 @@ public:
 
 	const FTrajectoryFollowingConfig& GetConfig() const { return Config; }
 
-	// Spawn the controller now if there is none yet, without a trajectory to follow; it idles until
-	// one is given. For an owner that wants every actor it will ever use to exist, under a fixed
-	// name, from the start, rather than to appear at the first trajectory. The controller is named
-	// after the pawn, <pawn>_TrajectoryFollowingController, and under no other name. Returns null if
-	// it could not be spawned: the owner is not a pawn, the world is not in play, or a live object
-	// holds that name.
-	UFUNCTION(BlueprintCallable, Category = "Trajectory")
-	ATrajectoryFollowingController* EnsureController();
-
 protected:
 	// Spawn (or reuse) the controller and have it follow the current Spline with the current Config.
 	// No-op if no spline is set or the owner is not a pawn.
@@ -107,7 +102,8 @@ protected:
 	TSubclassOf<ATrajectoryFollowingController> ControllerClass = ATrajectoryFollowingController::StaticClass();
 
 private:
-	// The controller spawned to drive this pawn, reused across reconfigurations.
+	// The controller that drives this pawn, reused across reconfigurations: one that already
+	// possessed the pawn, or else one spawned here.
 	UPROPERTY(Transient)
 	ATrajectoryFollowingController* Controller = nullptr;
 };
