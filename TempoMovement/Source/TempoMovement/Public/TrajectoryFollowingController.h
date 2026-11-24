@@ -257,15 +257,15 @@ private:
 	// than absolute world time, so it holds steady whenever the simulation is paused or stepped.
 	// The trajectory parameter for the time-domain modes; for SpeedVsTime it is only the argument
 	// its speed curve is evaluated at. Unused by ConstantSpeed. Reset to 0 when FollowTrajectory
-	// (re)starts following. Reflected, like the rest of the progress below, so that a save of a
-	// running simulation's reflected state carries where on its trajectory a pawn is.
-	UPROPERTY(Transient)
+	// (re)starts following. Readable, like the rest of the progress below, so that a client can see
+	// where on its trajectory a pawn is and a save of a simulation's reflected state carries it.
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory", meta = (AllowPrivateAccess = "true"))
 	double ElapsedSeconds = 0.0;
 
 	// Set once the trajectory has run out under the Clamp end behavior, after which progress stops
 	// advancing entirely and the pawn holds the final pose. Cleared when FollowTrajectory (re)starts
 	// following, which is the only way to drive a clamped trajectory again.
-	UPROPERTY(Transient)
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory", meta = (AllowPrivateAccess = "true"))
 	bool bReachedTrajectoryEnd = false;
 
 	// Which way the pawn is travelling along the current leg: true once the trajectory is carrying its
@@ -275,13 +275,13 @@ private:
 	// reverse leg is still creeping its last few cm in, and where re-deriving it would flip the pawn
 	// to "forwards" and strand it short. Reset to forwards when FollowTrajectory (re)starts following;
 	// flips as soon as the trajectory moves the other way (e.g. after SetSpeed changes sign).
-	UPROPERTY(Transient)
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory", meta = (AllowPrivateAccess = "true"))
 	bool bReversingLeg = false;
 
 	// Distance (cm) travelled along the spline, integrated per tick from CurrentSpeed() for the
 	// arc-length modes. This — not the clock — is what those modes' target pose is sampled at, which
 	// is why their speed can be changed mid-trajectory without the pose jumping. Reset to 0 when
 	// FollowTrajectory (re)starts following.
-	UPROPERTY(Transient)
+	UPROPERTY(BlueprintReadOnly, Category = "Trajectory", meta = (AllowPrivateAccess = "true"))
 	double DistanceAlongSpline = 0.0;
 };
