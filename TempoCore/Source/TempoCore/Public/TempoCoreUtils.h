@@ -69,7 +69,7 @@ public:
 	// For an actor that was spawned under a name of the caller's choosing: makes that name its
 	// identifier (GetActorIdentifier). A no-op in cooked builds, where the identifier is the name
 	// already. In the editor the identifier is the label, which would otherwise be made from the
-	// class name, the same for every actor of the class that has no number in its name.
+	// class name.
 	static void UseNameAsActorIdentifier(AActor* Actor);
 
 	// Removes a trailing Blueprint "_C" from a class name, if present.
