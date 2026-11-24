@@ -90,7 +90,9 @@ fn make_movable(actor: &Spawned) {
 fn spawn() -> Spawned {
     // StaticMeshActor is an engine class, so it is present whatever the host project is, and it
     // spawns with no mesh or collision so nothing moves it afterwards.
-    Spawned(world::spawn_actor::<StaticMeshActor>(None, None).expect("spawn_actor"))
+    Spawned(
+        world::spawn_actor_with::<StaticMeshActor>(Default::default()).expect("spawn_actor_with"),
+    )
 }
 
 #[test]
@@ -105,19 +107,23 @@ fn the_linked_classes_match_the_sim() {
 fn an_actor_spawned_under_a_name_has_it() {
     connect();
     let actor = Spawned(
-        world::spawn_actor_named::<StaticMeshActor>("TypedNamedSpawnTest", None, None)
-            .expect("spawn_actor_named"),
+        world::spawn_actor_with::<StaticMeshActor>(world::SpawnArgs {
+            name: Some("TypedNamedSpawnTest"),
+            ..Default::default()
+        })
+        .expect("spawn_actor_with"),
     );
     assert_eq!(actor.name(), "TypedNamedSpawnTest");
 
     let deferred = Spawned(
-        world::spawn_actor_deferred_named::<StaticMeshActor, _>(
-            "TypedNamedDeferredSpawnTest",
-            None,
-            None,
+        world::spawn_actor_deferred_with::<StaticMeshActor, _>(
+            world::SpawnArgs {
+                name: Some("TypedNamedDeferredSpawnTest"),
+                ..Default::default()
+            },
             |actor| actor.set_b_can_be_damaged(false),
         )
-        .expect("spawn_actor_deferred_named"),
+        .expect("spawn_actor_deferred_with"),
     );
     assert_eq!(deferred.name(), "TypedNamedDeferredSpawnTest");
     assert!(!deferred.actor().b_can_be_damaged().expect("read bCanBeDamaged"));
@@ -277,9 +283,8 @@ fn an_actor_spawned_deferred_without_blocking_is_configured_before_it_begins() {
     connect();
     // The handle is kept past block_on, where Spawned's blocking destroy can run.
     let actor = tempo_sim::context::RUNTIME.block_on(async {
-        let actor = world::spawn_actor_deferred_async::<StaticMeshActor, _, _>(
-            None,
-            None,
+        let actor = world::spawn_actor_deferred_with_async::<StaticMeshActor, _, _>(
+            Default::default(),
             |actor| async move {
                 // Owned by the future, as the async form hands it over; a batch queues the writes
                 // and sends them as one, before FinishSpawning lets the actor begin.

@@ -119,19 +119,36 @@ Result<T> get_subsystem() {
 /// visible where it was taken.
 Result<unreal::ObjectRef> find_actor(std::string_view name);
 
-/// Spawn one actor of a class and return a handle to it: tempo_world::spawn_actor, typed. The
-/// transform is SI, as tempo_world's is.
-///
-/// A name the engine makes up differs from one process to the next. Pass `name` when another
-/// process must find the same actor again, to restore saved state onto it for example. The spawn
-/// fails if the name is taken or is not a valid object name.
+/// What a spawn takes besides the class. An aggregate: name the members you set, as in
+/// `{.name = "Truck0"}`, so that a member added in a later release does not break the call.
+struct SpawnArgs {
+	/// Where to spawn the actor, in SI as tempo_world's is: in the world, or relative to
+	/// `relative_to_actor` if that is set.
+	std::optional<Transform> transform = std::nullopt;
+	/// The actor `transform` is relative to.
+	const unreal::Handle* relative_to_actor = nullptr;
+	/// The name to spawn the actor under. Without one the actor gets an auto-generated name, which
+	/// is not guaranteed to be stable between runs. Name the actor when another process must find
+	/// the same one again, to restore saved state onto it for example. The spawn fails if the name
+	/// is taken or is not a valid object name.
+	std::string_view name = {};
+};
+
+/// Spawn one actor of a class and return a handle to it: tempo_world::spawn_actor, typed.
 template <unreal::Class T>
-Result<T> spawn_actor(const std::optional<Transform>& transform = std::nullopt,
-					  const unreal::Handle* relative_to_actor = nullptr, std::string_view name = {}) {
+Result<T> spawn_actor_with(const SpawnArgs& args = {}) {
 	unreal::note_origin<T>();
-	auto spawned = detail::spawn(T::kPath, false, transform, relative_to_actor, name);
+	auto spawned = detail::spawn(T::kPath, false, args.transform, args.relative_to_actor, args.name);
 	if (!spawned) return std::move(spawned).error();
 	return T(unreal::ObjectRef::actor(std::move(spawned).value()).with_class(std::string(T::kPath)));
+}
+
+/// spawn_actor_with, with its arguments one by one.
+template <unreal::Class T>
+[[deprecated("use spawn_actor_with, which takes its arguments as a SpawnArgs")]]
+Result<T> spawn_actor(const std::optional<Transform>& transform = std::nullopt,
+					  const unreal::Handle* relative_to_actor = nullptr) {
+	return spawn_actor_with<T>({.transform = transform, .relative_to_actor = relative_to_actor});
 }
 
 /// Spawn an actor, configure it, and only then let it begin.
@@ -139,15 +156,12 @@ Result<T> spawn_actor(const std::optional<Transform>& transform = std::nullopt,
 /// What `configure` sets lands before the construction script and BeginPlay run, which is the only
 /// way to influence anything that reads it. Spawning is finished even if `configure` fails: a
 /// deferred actor left unfinished is in the world but never initialized, which is worse than one
-/// configured only partway. The error from `configure` is what comes back. `name` is as for
-/// spawn_actor.
+/// configured only partway. The error from `configure` is what comes back.
 template <unreal::Class T, typename F>
 	requires std::is_invocable_r_v<Result<void>, F, const T&>
-Result<T> spawn_actor_deferred(const std::optional<Transform>& transform,
-							   const unreal::Handle* relative_to_actor, F&& configure,
-							   std::string_view name = {}) {
+Result<T> spawn_actor_deferred_with(const SpawnArgs& args, F&& configure) {
 	unreal::note_origin<T>();
-	auto spawned = detail::spawn(T::kPath, true, transform, relative_to_actor, name);
+	auto spawned = detail::spawn(T::kPath, true, args.transform, args.relative_to_actor, args.name);
 	if (!spawned) return std::move(spawned).error();
 	T handle(unreal::ObjectRef::actor(spawned.value()).with_class(std::string(T::kPath)));
 	Result<void> configured = std::forward<F>(configure)(handle);
@@ -155,6 +169,16 @@ Result<T> spawn_actor_deferred(const std::optional<Transform>& transform,
 	if (!configured) return std::move(configured).error();
 	if (!finished) return std::move(finished).error();
 	return handle;
+}
+
+/// spawn_actor_deferred_with, with its arguments one by one.
+template <unreal::Class T, typename F>
+	requires std::is_invocable_r_v<Result<void>, F, const T&>
+[[deprecated("use spawn_actor_deferred_with, which takes its arguments as a SpawnArgs")]]
+Result<T> spawn_actor_deferred(const std::optional<Transform>& transform,
+							   const unreal::Handle* relative_to_actor, F&& configure) {
+	return spawn_actor_deferred_with<T>({.transform = transform, .relative_to_actor = relative_to_actor},
+										std::forward<F>(configure));
 }
 
 // -- the rest of tempo_world, given handles ----------------------------------------------------

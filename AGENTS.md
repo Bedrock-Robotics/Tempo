@@ -177,7 +177,9 @@ fails under Pyright instead of at runtime. See `TYPED_WORLD_API_PLAN.md`.
 - **`tempo_sim.unreal`** is the hand-written runtime -- the handle base, Unreal's value types,
   `AssetRef`, the registry: everything in Unreal's own units -- and `tempo_sim.world` has the entry points
   (`get_actors`, `get_actor`, `spawn_actor`, `spawn_actor_deferred`, each taking the name to spawn
-  under (Rust: the `_named` twins), `batch`, `check_schema`) and
+  under (Rust and C++: `spawn_actor_with` and `spawn_actor_deferred_with`, which take a `SpawnArgs`;
+  their positional `spawn_actor` and `spawn_actor_deferred` are deprecated), `batch`,
+  `check_schema`) and
   is otherwise **the reflected API's mirror of `tempo_world`**, in SI as it is: the same functions, names and SI arguments,
   with handles where `tempo_world` takes names (`destroy_actor`, `add_component`,
   `set_actor_location`, `get_component_transform`, `stream_actor_state`, `raycast`, …). Keep it
