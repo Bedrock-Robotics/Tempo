@@ -5,7 +5,6 @@
 #include "SplineActor.h"
 #include "TrajectoryFollowingController.h"
 
-#include "TempoCoreUtils.h"
 #include "TempoMovement.h"
 
 #include "GameFramework/Pawn.h"
@@ -105,18 +104,17 @@ ATrajectoryFollowingController* UTrajectoryFollowingComponent::EnsureController(
 	FActorSpawnParameters SpawnParameters;
 	SpawnParameters.Name = FName(*ControllerName);
 	// That name and no other: with a name the engine altered to make it unique the controller would
-	// be there, and not be found. The controller of a pawn that was destroyed keeps the name until
-	// it is garbage collected, so one of a pawn that is spawned again under the same name is
-	// renamed out of the way first.
+	// be there, and not be found.
 	SpawnParameters.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Required_ReturnNull;
-	UTempoCoreUtils::ReleaseNameOfDestroyedActor(World->GetCurrentLevel(), SpawnParameters.Name);
 	Controller = World->SpawnActor<ATrajectoryFollowingController>(ControllerClass, FTransform::Identity, SpawnParameters);
 	if (!Controller)
 	{
 		UE_LOG(LogTempoMovement, Error, TEXT("Could not spawn trajectory following controller '%s'. Is the name taken?"), *ControllerName);
 		return nullptr;
 	}
-	UTempoCoreUtils::UseNameAsActorIdentifier(Controller);
+#if WITH_EDITOR
+	Controller->SetActorLabel(Controller->GetName(), /*bMarkDirty=*/false);
+#endif
 	return Controller;
 }
 

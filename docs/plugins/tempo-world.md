@@ -112,8 +112,8 @@ actually is.
 
 A spawned actor gets a name from Unreal, and that name differs from one process to the next. Pass
 `name` to choose it yourself, for example so that another process can find the same actor again and
-restore saved state onto it. The spawn fails if the name is taken or is not a valid object name. A
-name is free again as soon as its actor is destroyed. Names do not tell upper case from lower:
+restore saved state onto it. The spawn fails if the name is taken or is not a valid object name. The
+name of a destroyed actor stays taken until Unreal next collects garbage. Names are case insensitive:
 `truck0` is taken while `Truck0` lives, and the name that comes back may be cased as an earlier
 use of it was.
 

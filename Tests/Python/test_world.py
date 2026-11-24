@@ -99,8 +99,7 @@ def test_spawn_accepts_either_blueprint_spelling(sim_server):
 
 def test_spawn_with_a_name(sim_server):
     """A named spawn gives the actor that name, in a deferred spawn as well. A name that is taken
-    or is not an object name fails the spawn, and a name is free again once its actor is
-    destroyed."""
+    or is not an object name fails the spawn."""
     names = []
     try:
         spawned = tw.spawn_actor(actor_type=SPAWNABLE_TYPE, transform=_transform(0.0, 0.0, 40.0),
@@ -123,15 +122,6 @@ def test_spawn_with_a_name(sim_server):
         names.append(deferred.name)
         assert deferred.name == "NamedDeferredSpawnTest"
         tw.finish_spawning_actor(actor=deferred.name)
-
-        # The destroyed actor holds the name until it is garbage collected; the spawn does not wait.
-        tw.destroy_actor(actor="NamedSpawnTest")
-        names.remove("NamedSpawnTest")
-        again = tw.spawn_actor(actor_type=SPAWNABLE_TYPE, transform=_transform(0.0, 0.0, 40.0),
-                               name="NamedSpawnTest")
-        names.append(again.name)
-        assert again.name == "NamedSpawnTest"
-        assert "NamedSpawnTest" in [a.name for a in tw.get_all_actors().actors]
     finally:
         for name in names:
             tw.destroy_actor(actor=name)

@@ -392,19 +392,10 @@ void UTempoWorldControlServiceSubsystem::SpawnActor(const SpawnActorRequest& Req
 			ResponseContinuation.ExecuteIfBound(SpawnActorResponse(), grpc::Status(grpc::ALREADY_EXISTS, std::string(TCHAR_TO_UTF8(*ErrorMsg))));
 			return;
 		}
-		// The check above goes by identifier and sees live actors only. What the spawn needs is the
-		// object name free in the level. An actor that was destroyed keeps its name until it is
-		// garbage collected, and a client that destroys an actor and spawns another under its name
-		// should not have to wait for that. Anything else that holds the name is in the way.
-		UTempoCoreUtils::ReleaseNameOfDestroyedActor(World->GetCurrentLevel(), ActorName);
-		if (StaticFindObjectFast(nullptr, World->GetCurrentLevel(), ActorName))
-		{
-			const FString ErrorMsg = FString::Printf(TEXT("The name '%s' is taken by another object in the level"), *RequestedName);
-			ResponseContinuation.ExecuteIfBound(SpawnActorResponse(), grpc::Status(grpc::ALREADY_EXISTS, std::string(TCHAR_TO_UTF8(*ErrorMsg))));
-			return;
-		}
 		SpawnParameters.Name = ActorName;
-		// The caller asked for this name and no other.
+		// The caller asked for this name and no other. The check above sees live actors; if anything
+		// else in the level holds the name (an actor that was destroyed keeps its name until it is
+		// garbage collected), the spawn below fails.
 		SpawnParameters.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Required_ReturnNull;
 	}
 
@@ -419,10 +410,14 @@ void UTempoWorldControlServiceSubsystem::SpawnActor(const SpawnActorRequest& Req
 		return;
 	}
 
+#if WITH_EDITOR
 	if (!SpawnParameters.Name.IsNone())
 	{
-		UTempoCoreUtils::UseNameAsActorIdentifier(SpawnedActor);
+		// In the editor an actor's name over the API is its label, which would otherwise be made
+		// from the class name.
+		SpawnedActor->SetActorLabel(SpawnedActor->GetName(), /*bMarkDirty=*/false);
 	}
+#endif
 
 	if (Request.deferred())
 	{
