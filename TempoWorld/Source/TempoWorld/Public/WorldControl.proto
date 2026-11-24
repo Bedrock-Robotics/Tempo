@@ -16,6 +16,11 @@ message SpawnActorRequest {
   TempoCore.Transform transform = 3;
   // Optional actor name that `transform` is interpreted relative to.
   string relative_to_actor = 4;
+  // Optional name for the new actor (auto-generated if empty). An auto-generated name differs from
+  // one process to the next, so a client that must find the same actor again in another process
+  // (to restore saved state onto it, for example) names it here. Fails if the name is taken or is
+  // not a valid object name. Upper and lower case are not told apart.
+  string name = 5;
 }
 
 message SpawnActorResponse {

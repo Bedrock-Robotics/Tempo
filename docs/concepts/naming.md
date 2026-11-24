@@ -19,6 +19,10 @@ An actor's name is always the result of `AActor::GetActorNameOrLabel`.
 
     Actors are assigned a unique name that is **not** the same as the Editor label.
 
+An actor spawned at runtime gets an auto-generated name, which is not guaranteed to be stable between runs.
+To give it a name of your own, pass `name` to `spawn_actor`; that name is then the actor's name in
+both cases above. Names are case insensitive.
+
 !!! warning "Do not hard-code Editor actor names"
 
     Because the packaged names differ, client code that hard-codes a name from the Editor will

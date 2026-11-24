@@ -410,9 +410,10 @@ def test_discovery_and_spawning_are_typed(generated, tmp_path):
     Result<Widget> one = world::get_actor<Widget>("Widget_1");
     world::Transform at;
     at.mutable_location()->set_z(1.0);   // SI, as tempo_world takes it: a meter up
-    Result<Widget> spawned = world::spawn_actor<Widget>(at);
-    Result<Widget> deferred = world::spawn_actor_deferred<Widget>(
-        std::nullopt, nullptr, [](const Widget& w) { return w.set_b_enabled(false); });
+    Result<Widget> spawned = world::spawn_actor_with<Widget>({.transform = at});
+    Result<Widget> named = world::spawn_actor_with<Widget>({.name = "Widget_2"});
+    Result<Widget> deferred = world::spawn_actor_deferred_with<Widget>(
+        {.relative_to_actor = &widget}, [](const Widget& w) { return w.set_b_enabled(false); });
     bool is_object = widget.is_a<Object>();
 """, tmp_path) == []
 

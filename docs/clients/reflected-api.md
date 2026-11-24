@@ -461,6 +461,14 @@ world.destroy_actor(truck)
 The deferred form is the only way to set a property that something reads during construction — a
 plain spawn has already run both by the time you have a handle.
 
+Both forms take the name to spawn the actor under, as `tempo_world.spawn_actor` does:
+`world.spawn_actor(BP_Truck_C, name="Truck0")` in Python. Rust and C++ take what Python takes as
+keywords in one struct, `SpawnArgs`, so that an argument added later does not break a call:
+`world::spawn_actor_with::<BP_Truck_C>(SpawnArgs { name: Some("Truck0"), ..Default::default() })`
+and `world::spawn_actor_with<BP_Truck_C>({.name = "Truck0"})`, with `spawn_actor_deferred_with` for
+the deferred form. Their `spawn_actor` and `spawn_actor_deferred`, which take a transform and an
+actor one by one and no name, are deprecated.
+
 | | `world` |
 |---|---|
 | Discovery | `get_actors(Cls)`, `get_actor(name, Cls)`, `get_components(actor, Cls)`, `get_subsystem(Cls)`; untyped, `get_actor(name)` (Python) or `find_actor(name)` (Rust, C++) |

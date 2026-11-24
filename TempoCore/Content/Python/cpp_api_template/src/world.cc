@@ -187,7 +187,8 @@ Result<void> resolve_subsystem(std::string_view class_path) {
 }
 
 Result<std::string> spawn(std::string_view class_path, bool deferred,
-                          const std::optional<Transform>& transform, const unreal::Handle* relative_to_actor) {
+                          const std::optional<Transform>& transform, const unreal::Handle* relative_to_actor,
+                          std::string_view name) {
     auto relative = optional_actor(relative_to_actor, "relative_to_actor");
     if (!relative) return std::move(relative).error();
     auto client = stub();
@@ -197,6 +198,7 @@ Result<std::string> spawn(std::string_view class_path, bool deferred,
     request.set_deferred(deferred);
     *request.mutable_transform() = transform.value_or(Transform{});
     request.set_relative_to_actor(relative.value());
+    request.set_name(std::string(name));
     TempoWorld::SpawnActorResponse response;
     grpc::ClientContext context;
     grpc::Status status = client.value()->SpawnActor(&context, request, &response);

@@ -269,6 +269,23 @@ def test_typed_attribute_access_round_trips(sim_server):
 
 
 @requires_classes
+def test_a_typed_spawn_takes_a_name(sim_server):
+    """world.spawn_actor and the deferred form pass `name` on, and the handle is to that actor."""
+    StaticMeshActor = registered().python_class(SPAWNABLE)
+    assert StaticMeshActor is not None
+
+    spawned = world.spawn_actor(StaticMeshActor, name="TypedNamedSpawnTest")
+    try:
+        assert spawned.actor == "TypedNamedSpawnTest"
+    finally:
+        tw.destroy_actor(actor=spawned.actor)
+
+    with world.spawn_actor_deferred(StaticMeshActor, name="TypedNamedDeferredSpawnTest") as deferred:
+        assert deferred.actor == "TypedNamedDeferredSpawnTest"
+    tw.destroy_actor(actor=deferred.actor)
+
+
+@requires_classes
 def test_a_property_with_a_blueprint_setter_is_written_through_it(sim_server):
     """The gap that let a real defect ship: nothing wrote one of these against a live sim.
 

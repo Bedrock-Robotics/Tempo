@@ -97,6 +97,36 @@ def test_spawn_accepts_either_blueprint_spelling(sim_server):
             tw.destroy_actor(actor=name)
 
 
+def test_spawn_with_a_name(sim_server):
+    """A named spawn gives the actor that name, in a deferred spawn as well. A name that is taken
+    or is not an object name fails the spawn."""
+    names = []
+    try:
+        spawned = tw.spawn_actor(actor_type=SPAWNABLE_TYPE, transform=_transform(0.0, 0.0, 40.0),
+                                 name="NamedSpawnTest")
+        names.append(spawned.name)
+        assert spawned.name == "NamedSpawnTest"
+
+        with pytest.raises(grpc.RpcError) as taken:
+            tw.spawn_actor(actor_type=SPAWNABLE_TYPE, transform=_transform(0.0, 0.0, 45.0),
+                           name="NamedSpawnTest")
+        assert taken.value.code() == grpc.StatusCode.ALREADY_EXISTS
+
+        with pytest.raises(grpc.RpcError) as invalid:
+            tw.spawn_actor(actor_type=SPAWNABLE_TYPE, transform=_transform(0.0, 0.0, 45.0),
+                           name="Not.A/Name")
+        assert invalid.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+
+        deferred = tw.spawn_actor(actor_type=SPAWNABLE_TYPE, deferred=True,
+                                  transform=_transform(0.0, 0.0, 50.0), name="NamedDeferredSpawnTest")
+        names.append(deferred.name)
+        assert deferred.name == "NamedDeferredSpawnTest"
+        tw.finish_spawning_actor(actor=deferred.name)
+    finally:
+        for name in names:
+            tw.destroy_actor(actor=name)
+
+
 def test_unknown_actor_type_is_not_found(sim_server):
     # Leniency about the "_C" suffix must not turn a genuinely bad type name into a match.
     with pytest.raises(grpc.RpcError) as excinfo:

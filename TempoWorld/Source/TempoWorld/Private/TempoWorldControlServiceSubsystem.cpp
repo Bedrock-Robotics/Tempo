@@ -372,17 +372,52 @@ void UTempoWorldControlServiceSubsystem::SpawnActor(const SpawnActorRequest& Req
 
 	FActorSpawnParameters SpawnParameters;
 	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-	const AActor* SpawnedActor = Request.deferred()
-		? World->SpawnActorDeferred<AActor>(Class, SpawnTransform, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn)
-		: World->SpawnActor(Class, &SpawnTransform, SpawnParameters);
+	// What SpawnActorDeferred sets, set here because SpawnActorDeferred cannot take a name.
+	SpawnParameters.bDeferConstruction = Request.deferred();
+
+	if (!Request.name().empty())
+	{
+		const FString RequestedName(UTF8_TO_TCHAR(Request.name().c_str()));
+		FText InvalidReason = FText::FromString(TEXT("the name is too long or is None"));
+		const FName ActorName = RequestedName.Len() < NAME_SIZE ? FName(*RequestedName) : FName();
+		if (ActorName.IsNone() || !ActorName.IsValidObjectName(InvalidReason))
+		{
+			const FString ErrorMsg = FString::Printf(TEXT("'%s' is not a valid actor name for SpawnActor request: %s"), *RequestedName.Left(64), *InvalidReason.ToString());
+			ResponseContinuation.ExecuteIfBound(SpawnActorResponse(), grpc::Status(grpc::INVALID_ARGUMENT, std::string(TCHAR_TO_UTF8(*ErrorMsg))));
+			return;
+		}
+		if (GetActorWithName(World, RequestedName))
+		{
+			const FString ErrorMsg = FString::Printf(TEXT("Actor with name '%s' already exists"), *RequestedName);
+			ResponseContinuation.ExecuteIfBound(SpawnActorResponse(), grpc::Status(grpc::ALREADY_EXISTS, std::string(TCHAR_TO_UTF8(*ErrorMsg))));
+			return;
+		}
+		SpawnParameters.Name = ActorName;
+		// The caller asked for this name and no other. The check above sees live actors; if anything
+		// else in the level holds the name (an actor that was destroyed keeps its name until it is
+		// garbage collected), the spawn below fails.
+		SpawnParameters.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Required_ReturnNull;
+	}
+
+	AActor* SpawnedActor = World->SpawnActor(Class, &SpawnTransform, SpawnParameters);
 
 	if (!SpawnedActor)
 	{
 		const FVector SpawnLocation = SpawnTransform.GetLocation();
-		const FString ErrorMsg = FString::Printf(TEXT("Failed to spawn actor of type '%s' at location (%f, %f, %f)"), *ActorTypeName, SpawnLocation.X, SpawnLocation.Y, SpawnLocation.Z);
+		const FString NameMsg = Request.name().empty() ? FString() : FString::Printf(TEXT(" with name '%s'"), UTF8_TO_TCHAR(Request.name().c_str()));
+		const FString ErrorMsg = FString::Printf(TEXT("Failed to spawn actor of type '%s'%s at location (%f, %f, %f)"), *ActorTypeName, *NameMsg, SpawnLocation.X, SpawnLocation.Y, SpawnLocation.Z);
 		ResponseContinuation.ExecuteIfBound(SpawnActorResponse(), grpc::Status(grpc::ABORTED, std::string(TCHAR_TO_UTF8(*ErrorMsg))));
 		return;
 	}
+
+#if WITH_EDITOR
+	if (!SpawnParameters.Name.IsNone())
+	{
+		// In the editor an actor's name over the API is its label, which would otherwise be made
+		// from the class name.
+		SpawnedActor->SetActorLabel(SpawnedActor->GetName(), /*bMarkDirty=*/false);
+	}
+#endif
 
 	if (Request.deferred())
 	{

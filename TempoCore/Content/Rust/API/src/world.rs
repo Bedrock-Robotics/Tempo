@@ -202,28 +202,65 @@ pub async fn find_actor_async(name: &str) -> Result<ObjectRef, TempoError> {
     }
 }
 
+/// What a spawn takes besides the class. Nothing is required: build it with
+/// `..Default::default()`, so that a member added in a later release takes its default rather than
+/// breaking the call.
+///
+/// ```
+/// use tempo_sim::world::SpawnArgs;
+///
+/// let args = SpawnArgs { name: Some("Truck0"), ..Default::default() };
+/// # let _ = args;
+/// ```
+#[derive(Clone, Debug, Default)]
+pub struct SpawnArgs<'a> {
+    /// Where to spawn the actor, in SI as `tempo_world`'s is: in the world, or relative to
+    /// `relative_to_actor` if that is set.
+    pub transform: Option<Transform>,
+    /// The actor `transform` is relative to.
+    pub relative_to_actor: Option<&'a ObjectRef>,
+    /// The name to spawn the actor under. Without one the actor gets an auto-generated name, which
+    /// is not guaranteed to be stable between runs. Name the actor when another process must find
+    /// the same one again, to restore saved state onto it for example. The spawn fails if the name
+    /// is taken or is not a valid object name.
+    pub name: Option<&'a str>,
+}
+
 /// Spawn one actor of a class and return a handle to it: `tempo_world::spawn_actor`, typed.
 ///
 /// Typed for free: the RPC already takes the class, so there is nothing to infer.
-pub fn spawn_actor<T: Class>(
-    transform: Option<Transform>,
-    relative_to_actor: Option<&ObjectRef>,
-) -> Result<T, TempoError> {
+pub fn spawn_actor_with<T: Class>(args: SpawnArgs<'_>) -> Result<T, TempoError> {
     note_origin::<T>();
-    let request = spawn_request::<T>(false, transform, relative_to_actor)?;
+    let request = spawn_request::<T>(false, &args)?;
     let response = crate::tempo_world::spawn_actor(request)?;
     Ok(T::from_object(ObjectRef::actor(response.name).with_class(T::PATH)))
 }
 
 /// Spawn one actor of a class, without blocking.
+pub async fn spawn_actor_with_async<T: Class>(args: SpawnArgs<'_>) -> Result<T, TempoError> {
+    note_origin::<T>();
+    let request = spawn_request::<T>(false, &args)?;
+    let response = crate::tempo_world::spawn_actor_async(request).await?;
+    Ok(T::from_object(ObjectRef::actor(response.name).with_class(T::PATH)))
+}
+
+/// [`spawn_actor_with`], with its arguments one by one.
+#[deprecated(note = "use spawn_actor_with, which takes its arguments as a SpawnArgs")]
+pub fn spawn_actor<T: Class>(
+    transform: Option<Transform>,
+    relative_to_actor: Option<&ObjectRef>,
+) -> Result<T, TempoError> {
+    spawn_actor_with::<T>(SpawnArgs { transform, relative_to_actor, ..Default::default() })
+}
+
+/// [`spawn_actor_with_async`], with its arguments one by one.
+#[deprecated(note = "use spawn_actor_with_async, which takes its arguments as a SpawnArgs")]
 pub async fn spawn_actor_async<T: Class>(
     transform: Option<Transform>,
     relative_to_actor: Option<&ObjectRef>,
 ) -> Result<T, TempoError> {
-    note_origin::<T>();
-    let request = spawn_request::<T>(false, transform, relative_to_actor)?;
-    let response = crate::tempo_world::spawn_actor_async(request).await?;
-    Ok(T::from_object(ObjectRef::actor(response.name).with_class(T::PATH)))
+    let args = SpawnArgs { transform, relative_to_actor, ..Default::default() };
+    spawn_actor_with_async::<T>(args).await
 }
 
 /// Spawn an actor, configure it, and only then let it begin.
@@ -258,7 +295,7 @@ pub async fn spawn_actor_async<T: Class>(
 /// #     }
 /// # }
 /// # fn main() -> Result<(), tempo_sim::TempoError> {
-/// let truck = world::spawn_actor_deferred::<BP_Truck_C, _>(None, None, |truck| {
+/// let truck = world::spawn_actor_deferred_with::<BP_Truck_C, _>(Default::default(), |truck| {
 ///     truck.set_max_speed(1200.0)
 /// })?;
 /// # let _ = truck;
@@ -269,17 +306,13 @@ pub async fn spawn_actor_async<T: Class>(
 /// Spawning is finished even if `configure` fails: a deferred actor left unfinished is in the
 /// world but never initialized, which is worse than one configured only partway. The error from
 /// `configure` is what comes back.
-pub fn spawn_actor_deferred<T, F>(
-    transform: Option<Transform>,
-    relative_to_actor: Option<&ObjectRef>,
-    configure: F,
-) -> Result<T, TempoError>
+pub fn spawn_actor_deferred_with<T, F>(args: SpawnArgs<'_>, configure: F) -> Result<T, TempoError>
 where
     T: Class,
     F: FnOnce(&T) -> Result<(), TempoError>,
 {
     note_origin::<T>();
-    let request = spawn_request::<T>(true, transform, relative_to_actor)?;
+    let request = spawn_request::<T>(true, &args)?;
     let response = crate::tempo_world::spawn_actor(request)?;
     let handle = T::from_object(ObjectRef::actor(&response.name).with_class(T::PATH));
 
@@ -292,7 +325,24 @@ where
     Ok(handle)
 }
 
-/// [`spawn_actor_deferred`], without blocking.
+/// [`spawn_actor_deferred_with`], with its arguments one by one.
+#[deprecated(note = "use spawn_actor_deferred_with, which takes its arguments as a SpawnArgs")]
+pub fn spawn_actor_deferred<T, F>(
+    transform: Option<Transform>,
+    relative_to_actor: Option<&ObjectRef>,
+    configure: F,
+) -> Result<T, TempoError>
+where
+    T: Class,
+    F: FnOnce(&T) -> Result<(), TempoError>,
+{
+    spawn_actor_deferred_with::<T, F>(
+        SpawnArgs { transform, relative_to_actor, ..Default::default() },
+        configure,
+    )
+}
+
+/// [`spawn_actor_deferred_with`], without blocking.
 ///
 /// `configure` is given a handle of its own to the actor, because the future it returns has to own
 /// what it uses across an await; what comes back is a handle to the same actor. Inside it, write
@@ -324,9 +374,10 @@ where
 /// #     }
 /// # }
 /// # async fn spawn() -> Result<(), tempo_sim::TempoError> {
-/// let truck = world::spawn_actor_deferred_async::<BP_Truck_C, _, _>(None, None, |truck| async move {
-///     world::batch_async(|| truck.set_max_speed(1200.0)).await
-/// })
+/// let truck = world::spawn_actor_deferred_with_async::<BP_Truck_C, _, _>(
+///     Default::default(),
+///     |truck| async move { world::batch_async(|| truck.set_max_speed(1200.0)).await },
+/// )
 /// .await?;
 /// # let _ = truck;
 /// # Ok(())
@@ -336,9 +387,8 @@ where
 /// As in the blocking form, spawning is finished even if `configure` fails, and its error is what
 /// comes back. Dropped before it completes, this leaves the actor unfinished, as the blocking form
 /// does if `configure` panics.
-pub async fn spawn_actor_deferred_async<T, F, Fut>(
-    transform: Option<Transform>,
-    relative_to_actor: Option<&ObjectRef>,
+pub async fn spawn_actor_deferred_with_async<T, F, Fut>(
+    args: SpawnArgs<'_>,
     configure: F,
 ) -> Result<T, TempoError>
 where
@@ -347,7 +397,7 @@ where
     Fut: std::future::Future<Output = Result<(), TempoError>>,
 {
     note_origin::<T>();
-    let request = spawn_request::<T>(true, transform, relative_to_actor)?;
+    let request = spawn_request::<T>(true, &args)?;
     let response = crate::tempo_world::spawn_actor_async(request).await?;
     let object = ObjectRef::actor(&response.name).with_class(T::PATH);
 
@@ -360,16 +410,37 @@ where
     Ok(T::from_object(object))
 }
 
-fn spawn_request<T: Class>(
-    deferred: bool,
+/// [`spawn_actor_deferred_with_async`], with its arguments one by one.
+#[deprecated(
+    note = "use spawn_actor_deferred_with_async, which takes its arguments as a SpawnArgs"
+)]
+pub async fn spawn_actor_deferred_async<T, F, Fut>(
     transform: Option<Transform>,
     relative_to_actor: Option<&ObjectRef>,
+    configure: F,
+) -> Result<T, TempoError>
+where
+    T: Class,
+    F: FnOnce(T) -> Fut,
+    Fut: std::future::Future<Output = Result<(), TempoError>>,
+{
+    spawn_actor_deferred_with_async::<T, F, Fut>(
+        SpawnArgs { transform, relative_to_actor, ..Default::default() },
+        configure,
+    )
+    .await
+}
+
+fn spawn_request<T: Class>(
+    deferred: bool,
+    args: &SpawnArgs<'_>,
 ) -> Result<pb::SpawnActorRequest, TempoError> {
     Ok(pb::SpawnActorRequest {
         actor_type: T::PATH.to_string(),
         deferred,
-        transform,
-        relative_to_actor: optional_actor(relative_to_actor, "relative_to_actor")?,
+        transform: args.transform.clone(),
+        relative_to_actor: optional_actor(args.relative_to_actor, "relative_to_actor")?,
+        name: args.name.unwrap_or_default().to_string(),
     })
 }
 

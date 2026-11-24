@@ -41,6 +41,11 @@ DECLARE_MULTICAST_DELEGATE_OneParam(FTrajectoryEndSignature, const FTrajectoryEn
 // controller possess and drive the pawn. Because the spline is referenced (not owned), several pawns
 // can each carry one of these components pointing at the same spline while traversing it with their
 // own Config (e.g. different speed models or end behavior).
+//
+// A pawn that a ATrajectoryFollowingController already possesses keeps that controller: the component
+// uses it instead of spawning one, and from then on treats it as its own (it is destroyed with the
+// component). Spawn and possess the controller yourself to choose its name; one the component spawns
+// gets an auto-generated name.
 UCLASS(ClassGroup = (Tempo), meta = (BlueprintSpawnableComponent))
 class TEMPOMOVEMENT_API UTrajectoryFollowingComponent : public UActorComponent
 {
@@ -97,7 +102,8 @@ protected:
 	TSubclassOf<ATrajectoryFollowingController> ControllerClass = ATrajectoryFollowingController::StaticClass();
 
 private:
-	// The controller spawned to drive this pawn, reused across reconfigurations.
+	// The controller that drives this pawn, reused across reconfigurations: one that already
+	// possessed the pawn, or else one spawned here.
 	UPROPERTY(Transient)
 	ATrajectoryFollowingController* Controller = nullptr;
 };

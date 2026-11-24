@@ -58,7 +58,7 @@ struct Spawned {
 // StaticMeshActor is an engine class, so it is present whatever the host project is, and it spawns
 // with no mesh or collision so nothing moves it afterwards.
 std::optional<Spawned> spawn() {
-	auto actor = world::spawn_actor<StaticMeshActor>();
+	auto actor = world::spawn_actor_with<StaticMeshActor>();
 	if (!actor) {
 		tempo_test::fail(__FILE__, __LINE__, "spawn_actor: " + actor.error().what());
 		return std::nullopt;
@@ -86,6 +86,14 @@ TEMPO_TEST(the_linked_classes_match_the_sim) {
 	// The content hash covers names, types and writability. If this fails, every other case here is
 	// testing classes that describe a different build.
 	REQUIRE_OK(world::check_schema());
+}
+
+TEMPO_TEST(an_actor_spawned_under_a_name_has_it) {
+	REQUIRE(tempo_test::connect());
+	auto actor = world::spawn_actor_with<StaticMeshActor>({.name = "TypedNamedSpawnTest"});
+	REQUIRE_OK(actor);
+	Spawned spawned(std::move(actor).value());
+	CHECK(spawned.actor.object().actor_name() == "TypedNamedSpawnTest");
 }
 
 TEMPO_TEST(a_property_round_trips_through_an_inherited_member) {

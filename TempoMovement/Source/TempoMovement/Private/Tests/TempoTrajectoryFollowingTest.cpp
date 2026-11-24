@@ -661,4 +661,55 @@ bool FTempoTrajectoryBodySpeedTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+//
+// The component's controller: one that already possesses the pawn is the one the component uses,
+// which is how a pawn gets a controller under a name of the caller's choosing.
+//
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTempoTrajectoryExistingControllerTest,
+	"Tempo.Movement.TrajectoryFollowing.ExistingController", TempoTrajectoryTestFlags)
+bool FTempoTrajectoryExistingControllerTest::RunTest(const FString& Parameters)
+{
+	FTrajectoryTestFixture Fixture;
+
+	Fixture.Controller->Possess(Fixture.Pawn);
+	Fixture.Component->ConfigureAndFollow(Fixture.SplineActor, FTrajectoryTestFixture::ConstantSpeedConfig(100.0));
+
+	// A controller the component spawned would have taken the pawn over.
+	if (Fixture.Pawn->GetController() != Fixture.Controller)
+	{
+		AddError(TEXT("The component should use the controller that already possesses the pawn"));
+		return true;
+	}
+
+	// The controller that was there got the trajectory: 100 cm/s for 1 s.
+	Fixture.Tick(10);
+	if (!FMath::IsNearlyEqual(Fixture.PawnX(), 100.0, DistanceTol))
+	{
+		AddError(FString::Printf(TEXT("The existing controller should drive the pawn along the spline: expected x near 100, got %f"), Fixture.PawnX()));
+	}
+
+	return true;
+}
+
+//
+// Progress along a trajectory is reflected, so that a save of a simulation's reflected state carries
+// where on its trajectory a pawn is.
+//
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTempoTrajectoryProgressReflectedTest,
+	"Tempo.Movement.TrajectoryFollowing.ProgressReflected", TempoTrajectoryTestFlags)
+bool FTempoTrajectoryProgressReflectedTest::RunTest(const FString& Parameters)
+{
+	for (const TCHAR* PropertyName : { TEXT("ElapsedSeconds"), TEXT("DistanceAlongSpline"), TEXT("bReachedTrajectoryEnd"), TEXT("bReversingLeg") })
+	{
+		if (!ATrajectoryFollowingController::StaticClass()->FindPropertyByName(PropertyName))
+		{
+			AddError(FString::Printf(TEXT("%s should be a reflected property"), PropertyName));
+		}
+	}
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

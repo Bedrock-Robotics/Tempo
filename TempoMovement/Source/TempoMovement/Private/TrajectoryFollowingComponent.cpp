@@ -70,6 +70,13 @@ void UTrajectoryFollowingComponent::StartFollowing()
 
 	if (!Controller)
 	{
+		// A trajectory following controller that already has the pawn is the one to use. Whoever
+		// spawned it chose its name, which is how a pawn gets a controller under a fixed name.
+		Controller = Cast<ATrajectoryFollowingController>(OwnerPawn->GetController());
+	}
+
+	if (!Controller)
+	{
 		// Don't set the pawn as the controller's owner: once the controller possesses the pawn,
 		// PossessedBy() makes the pawn owned by the controller, which would form an owner loop.
 		Controller = GetWorld()->SpawnActor<ATrajectoryFollowingController>(ControllerClass);
