@@ -172,7 +172,9 @@ covered in:
 
 - **`ATempoWorldSettings`** extends `AWorldSettings` with Tempo's time modes and rendering
   settings, including a "Default Exposure Compensation" helper that derives a sensible manual
-  exposure from the level's directional light.
+  exposure from the level's directional light. Its `SetSimTime` moves sim time, forwards or
+  backwards, for a project that restores a saved state of its simulation; see the comment on it
+  for what moves with the clock and what the caller has to see to.
 - **`UTempoCoreUtils::GetActorIdentifier`** produces the stable actor identifier Tempo's own RPCs
   report. Use it in your own services rather than `GetActorNameOrLabel` — see
   [Naming](../concepts/naming.md).
