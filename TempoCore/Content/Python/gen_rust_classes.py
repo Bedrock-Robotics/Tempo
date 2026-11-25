@@ -559,8 +559,20 @@ class Generator:
         name = ident(cls["name"])
         lines = [
             "#[repr(transparent)]",
-            "#[derive(Clone, Debug, PartialEq, Eq)]",
+            "#[derive(Clone, Debug, PartialEq, Eq, {}::__serde::Serialize)]".format(RUNTIME),
+            '#[serde(crate = "{}::__serde", transparent)]'.format(RUNTIME),
             "pub struct {}(pub {}::ObjectRef);".format(name, RUNTIME),
+            "",
+            "// A handle read back from a file is a handle made through this crate, like any other.",
+            "impl<'de> {}::__serde::Deserialize<'de> for {} {{".format(RUNTIME, name),
+            "    fn deserialize<D: {}::__serde::Deserializer<'de>>(deserializer: D) "
+            "-> Result<Self, D::Error> {{".format(RUNTIME),
+            "        let object = <{0}::ObjectRef as {0}::__serde::Deserialize>::deserialize(deserializer)?;"
+            .format(RUNTIME),
+            "        {}::note_origin::<Self>();".format(RUNTIME),
+            "        Ok(Self(object))",
+            "    }",
+            "}",
             "",
             "// SAFETY: a transparent newtype over ObjectRef, which is what upcast() relies on.",
             "unsafe impl {}::Class for {} {{".format(RUNTIME, name),

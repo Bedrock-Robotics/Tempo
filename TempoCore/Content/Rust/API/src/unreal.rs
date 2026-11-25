@@ -251,7 +251,7 @@ string_ref!(ClassRef);
 /// Addressed the way every `TempoWorld` RPC addresses things: an actor name, and a component name
 /// when the handle is to a component rather than to the actor itself -- or, for a subsystem, its
 /// class alone, since there is one per world (or game instance, or engine).
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ObjectRef {
     actor: String,
     component: String,
@@ -349,6 +349,11 @@ pub unsafe trait Class: Sized + Send {
     /// whose initializer a linker dropped is still there before [`ObjectRef::is_a`] needs it.
     fn hierarchy() -> &'static (dyn Hierarchy + 'static);
 }
+
+/// For the generated handle types, which derive their serialization through this crate so that a
+/// generated crate needs no dependency of its own.
+#[doc(hidden)]
+pub use serde as __serde;
 
 /// Note the crate a handle came from, so the class table is available to ask about it later.
 #[inline]
